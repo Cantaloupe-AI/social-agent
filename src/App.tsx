@@ -170,14 +170,21 @@ export default function App() {
               What happened today?
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setConfigOpen(true)}
-            aria-label="Open settings"
-          >
-            <Settings className="size-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <span
+              className="size-2 rounded-full bg-red-500"
+              aria-hidden
+              title="build marker"
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setConfigOpen(true)}
+              aria-label="Open settings"
+            >
+              <Settings className="size-4" />
+            </Button>
+          </div>
         </header>
 
         {activitiesError && (
