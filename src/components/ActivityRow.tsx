@@ -37,7 +37,7 @@ export function ActivityRow({
       data-selected={selected}
       onClick={() => onSelect(activity.id)}
       className={cn(
-        "group flex items-center gap-4 rounded-md px-3 py-3 text-sm cursor-default",
+        "group flex items-start gap-4 rounded-md px-3 py-3 text-sm cursor-default",
         "border border-transparent transition-colors",
         "w-full min-w-0",
         selected
@@ -50,24 +50,26 @@ export function ActivityRow({
         onCheckedChange={() => onToggle(activity.id)}
         onClick={(e) => e.stopPropagation()}
         aria-label={`Include ${activity.summary}`}
+        className="mt-0.5"
       />
       <Icon
-        className={cn("size-4 shrink-0", SOURCE_COLOR[activity.source])}
+        className={cn("size-4 shrink-0 mt-1", SOURCE_COLOR[activity.source])}
         aria-hidden
       />
-      <span className="font-mono text-xs text-muted-foreground tabular-nums w-11 shrink-0">
+      <span className="font-mono text-xs text-muted-foreground tabular-nums w-11 shrink-0 mt-1">
         {formatClockTime(activity.timestamp)}
       </span>
       <span
         className={cn(
-          "flex-1 min-w-0 truncate",
-          activity.included ? "text-foreground" : "text-muted-foreground line-through",
+          "flex-1 min-w-0 leading-6 break-words",
+          activity.included
+            ? "text-foreground"
+            : "text-muted-foreground line-through",
         )}
-        title={activity.summary}
       >
         {activity.summary}
       </span>
-      <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0 max-w-[18ch] truncate">
+      <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0 max-w-[18ch] truncate mt-1">
         {activity.chip}
       </span>
     </div>
