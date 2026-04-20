@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"How do I set up Tauri v2 with SQLite?"},"uuid":"aaa","timestamp":"2026-04-19T10:12:33.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Use rusqlite with the bundled feature."}]},"uuid":"bbb","timestamp":"2026-04-19T10:12:35.000Z"}
