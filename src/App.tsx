@@ -90,10 +90,32 @@ export default function App() {
     if (saveState === "saving") return;
     if (configOpen) return;
     setSaveState("saving");
+
+    const noteText = thoughts.trim();
+    let nextActivities = activities;
+    if (noteText.length > 0) {
+      const nowIso = new Date().toISOString();
+      const note: (typeof activities)[number] = {
+        id: `note:${nowIso}`,
+        source: "note",
+        timestamp: nowIso,
+        summary: noteText,
+        chip: "note",
+        included: true,
+      };
+      nextActivities = [note, ...activities];
+      setActivities(nextActivities);
+    }
+
     try {
-      const included = activities.filter((a) => a.included);
-      await saveEntry(included, thoughts);
-      setInitialThoughts(thoughts);
+      const included = nextActivities.filter((a) => a.included);
+      // Thoughts field has been converted to a note row; save an empty thoughts
+      // column so we don't persist the scratch text twice.
+      await saveEntry(included, "");
+      if (noteText.length > 0) {
+        setThoughts("");
+        setInitialThoughts("");
+      }
       setSaveState("saved");
       setTimeout(() => {
         setSaveState((s) => (s === "saved" ? "idle" : s));
@@ -102,7 +124,7 @@ export default function App() {
       console.error("cantalog: saveEntry failed", e);
       setSaveState("idle");
     }
-  }, [activities, thoughts, saveState, configOpen]);
+  }, [activities, thoughts, saveState, configOpen, setActivities]);
 
   const handleSaveConfig = useCallback(async (next: Config) => {
     await saveConfig(next);

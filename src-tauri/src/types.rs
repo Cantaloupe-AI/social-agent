@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub enum ActivitySource {
     GitCommit,
     ClaudeCodeSession,
+    Note,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-export type ActivitySource = "git_commit" | "claude_code_session";
+export type ActivitySource = "git_commit" | "claude_code_session" | "note";
 
 export interface Activity {
   id: string;

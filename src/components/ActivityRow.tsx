@@ -1,8 +1,20 @@
-import { GitCommit, Sparkles } from "lucide-react";
+import { GitCommit, NotebookPen, Sparkles } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { formatClockTime } from "@/lib/time";
-import type { Activity } from "@/lib/types";
+import type { Activity, ActivitySource } from "@/lib/types";
+
+const SOURCE_ICON: Record<ActivitySource, typeof GitCommit> = {
+  git_commit: GitCommit,
+  claude_code_session: Sparkles,
+  note: NotebookPen,
+};
+
+const SOURCE_COLOR: Record<ActivitySource, string> = {
+  git_commit: "text-emerald-400",
+  claude_code_session: "text-amber-400",
+  note: "text-sky-400",
+};
 
 export interface ActivityRowProps {
   activity: Activity;
@@ -17,7 +29,7 @@ export function ActivityRow({
   onToggle,
   onSelect,
 }: ActivityRowProps) {
-  const Icon = activity.source === "git_commit" ? GitCommit : Sparkles;
+  const Icon = SOURCE_ICON[activity.source];
 
   return (
     <div
@@ -40,12 +52,7 @@ export function ActivityRow({
         aria-label={`Include ${activity.summary}`}
       />
       <Icon
-        className={cn(
-          "size-4 shrink-0",
-          activity.source === "git_commit"
-            ? "text-emerald-400"
-            : "text-amber-400",
-        )}
+        className={cn("size-4 shrink-0", SOURCE_COLOR[activity.source])}
         aria-hidden
       />
       <span className="font-mono text-xs text-muted-foreground tabular-nums w-11 shrink-0">
