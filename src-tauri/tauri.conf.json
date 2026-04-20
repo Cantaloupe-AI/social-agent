@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "social-agent",
+  "productName": "Cantalog",
   "version": "0.1.0",
-  "identifier": "com.joshuaanderson.social-agent",
+  "identifier": "com.joshuaanderson.cantalog",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "social-agent",
-        "width": 800,
-        "height": 600
+        "title": "Cantalog",
+        "width": 720,
+        "height": 760,
+        "resizable": true,
+        "center": true
       }
     ],
     "security": {
