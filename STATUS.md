@@ -119,12 +119,14 @@ If anything on this list breaks, check:
 
 ## Known limitations / things to validate
 
-- **"Loading today's activity…"** will always flash because we wait on two parallel fetches before merge. Fine for v1.
-- **If `loadConfig` fails**, the gear icon opens a dialog with empty draft state (no repos, blank projects dir). Save would overwrite with those defaults. Not great — but also hard to hit since load_config writes defaults on miss.
-- **Chip width is capped at 18ch.** Long project paths (like our lossy-decoded ones) will truncate visually. Hover title shows full text.
-- **Window close behavior after save** uses `getCurrentWindow().close()`. On some Tauri/macOS combos this may just hide the window rather than terminate the process. Verify that the dock icon disappears after save; if it doesn't, swap to `AppHandle::exit(0)` via a new command.
-- **Save button doesn't re-enable after a failed save — wait, yes it does.** The catch block sets `saveState` back to `"idle"`. Verified in code review.
-- **Escape key confirmation uses `window.confirm()`** — native but unstyled. Fine for v1.
+- **"Loading today's activity…"** will always flash because we wait on two parallel fetches before merge. Cosmetic; unavoidable without a cache.
+- **Chip width is capped at 18ch.** Long project paths (like our lossy-decoded ones) will truncate visually. Hover `title` shows full text.
+- **Escape key confirmation uses `window.confirm()`** — native but unstyled. Intentional for v1 (no extra modal component needed).
+
+### Previously-flagged, now fixed
+
+- ✅ **Window close after save now terminates the process.** Added a `quit_app` Tauri command that calls `AppHandle::exit(0)`, and Save + Escape now invoke it via `quitApp()` instead of `getCurrentWindow().close()`. Without this, macOS's default AppKit behavior (keep the app alive when the last window closes) conflicted with the spec's "app closes itself after save" — the dock icon would stay.
+- ✅ **ConfigDialog with a null config now shows a recovery message** explaining the likely cause (missing/corrupt `config.toml`) and the fix (restart; it auto-creates defaults). Previously the dialog opened with all inputs disabled and no explanation.
 
 ## File-by-file inventory
 

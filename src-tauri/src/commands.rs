@@ -56,3 +56,13 @@ pub async fn load_config() -> Result<Config, String> {
 pub async fn save_config(config: Config) -> Result<(), String> {
     crate::config::save_config(&config).map_err(|e| e.to_string())
 }
+
+// Force full-process termination. macOS keeps Tauri apps alive after the last window
+// closes (standard AppKit behavior), which conflicts with the spec's "app closes itself
+// after save". Calling AppHandle::exit(0) terminates the process so the dock icon goes
+// away and the next launch is a fresh state.
+#[tauri::command]
+pub async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
+}

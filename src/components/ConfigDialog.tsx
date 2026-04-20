@@ -99,6 +99,23 @@ export function ConfigDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {!draft ? (
+          <div className="flex flex-col gap-3 py-4 text-sm">
+            <p className="text-destructive">
+              Could not load the current config. This usually means the config
+              file is missing or corrupt.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Try: close this dialog, restart the app. A missing file will be
+              re-created with defaults on next launch. If you see this again,
+              inspect{" "}
+              <span className="font-mono">
+                ~/Library/Application Support/cantalog/config.toml
+              </span>
+              .
+            </p>
+          </div>
+        ) : (
         <div className="flex flex-col gap-5 py-2">
           <section className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
@@ -174,6 +191,7 @@ export function ConfigDialog({
             </div>
           )}
         </div>
+        )}
 
         <DialogFooter>
           <Button

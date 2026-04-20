@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings } from "lucide-react";
 
 import { ActivityList } from "@/components/ActivityList";
@@ -11,7 +10,7 @@ import { useActivities } from "@/hooks/useActivities";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { useTodayEntry } from "@/hooks/useTodayEntry";
 import { mergeEntryWithFetched } from "@/lib/merge";
-import { loadConfig, saveConfig, saveEntry } from "@/lib/tauri";
+import { loadConfig, quitApp, saveConfig, saveEntry } from "@/lib/tauri";
 import { formatFriendlyDate } from "@/lib/time";
 import type { Config } from "@/lib/types";
 
@@ -94,7 +93,7 @@ export default function App() {
       await saveEntry(included, thoughts);
       setSaveState("saved");
       setTimeout(() => {
-        void getCurrentWindow().close();
+        void quitApp();
       }, 400);
     } catch (e: unknown) {
       console.error("cantalog: saveEntry failed", e);
@@ -114,7 +113,7 @@ export default function App() {
       );
       if (!proceed) return;
     }
-    void getCurrentWindow().close();
+    void quitApp();
   }, [dirty]);
 
   useKeyboard({

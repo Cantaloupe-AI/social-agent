@@ -23,3 +23,7 @@ export async function loadConfig(): Promise<Config> {
 export async function saveConfig(config: Config): Promise<void> {
   await invoke<void>("save_config", { config });
 }
+
+export async function quitApp(): Promise<void> {
+  await invoke<void>("quit_app");
+}
