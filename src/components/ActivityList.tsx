@@ -1,4 +1,3 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { ActivityRow } from "./ActivityRow";
 import type { Activity } from "@/lib/types";
 
@@ -35,8 +34,8 @@ export function ActivityList({
   }
 
   return (
-    <ScrollArea className="h-[280px] rounded-md border border-border/60 bg-card/40">
-      <div className="flex flex-col p-1">
+    <div className="h-[280px] w-full overflow-y-auto overflow-x-hidden rounded-md border border-border/60 bg-card/40">
+      <div className="flex flex-col p-1 min-w-0 w-full">
         {activities.map((a) => (
           <ActivityRow
             key={a.id}
@@ -47,6 +46,6 @@ export function ActivityList({
           />
         ))}
       </div>
-    </ScrollArea>
+    </div>
   );
 }

@@ -27,6 +27,7 @@ export function ActivityRow({
       className={cn(
         "group flex items-center gap-3 rounded-md px-2 py-2 text-sm cursor-default",
         "border border-transparent transition-colors",
+        "w-full min-w-0",
         selected
           ? "bg-muted/60 border-border"
           : "hover:bg-muted/30",
@@ -52,7 +53,7 @@ export function ActivityRow({
       </span>
       <span
         className={cn(
-          "flex-1 truncate",
+          "flex-1 min-w-0 truncate",
           activity.included ? "text-foreground" : "text-muted-foreground line-through",
         )}
         title={activity.summary}
