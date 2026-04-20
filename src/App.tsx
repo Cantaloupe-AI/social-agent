@@ -87,6 +87,7 @@ export default function App() {
 
   const handleSave = useCallback(async () => {
     if (saveState !== "idle") return;
+    if (configOpen) return;
     setSaveState("saving");
     try {
       const included = activities.filter((a) => a.included);
@@ -99,7 +100,7 @@ export default function App() {
       console.error("cantalog: saveEntry failed", e);
       setSaveState("idle");
     }
-  }, [activities, thoughts, saveState]);
+  }, [activities, thoughts, saveState, configOpen]);
 
   const handleSaveConfig = useCallback(async (next: Config) => {
     await saveConfig(next);
@@ -107,6 +108,8 @@ export default function App() {
   }, []);
 
   const handleEscape = useCallback(() => {
+    // Radix dialog already handles Escape to close itself; don't also quit the app.
+    if (configOpen) return;
     if (dirty) {
       const proceed = window.confirm(
         "Unsaved thoughts will be lost. Close anyway?",
@@ -114,7 +117,7 @@ export default function App() {
       if (!proceed) return;
     }
     void quitApp();
-  }, [dirty]);
+  }, [dirty, configOpen]);
 
   useKeyboard({
     onNext: () => moveSelection(1),
