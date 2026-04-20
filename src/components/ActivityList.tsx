@@ -34,8 +34,8 @@ export function ActivityList({
   }
 
   return (
-    <div className="max-h-[320px] w-full overflow-y-auto overflow-x-hidden rounded-md border border-border/60 bg-card/40">
-      <div className="flex flex-col p-1 min-w-0 w-full">
+    <div className="max-h-[360px] w-full overflow-y-auto overflow-x-hidden rounded-lg border border-border/60 bg-card/40">
+      <div className="flex flex-col gap-0.5 p-2 min-w-0 w-full">
         {activities.map((a) => (
           <ActivityRow
             key={a.id}

@@ -37,7 +37,7 @@ export function ActivityRow({
       data-selected={selected}
       onClick={() => onSelect(activity.id)}
       className={cn(
-        "group flex items-center gap-3 rounded-md px-2 py-2 text-sm cursor-default",
+        "group flex items-center gap-4 rounded-md px-3 py-3 text-sm cursor-default",
         "border border-transparent transition-colors",
         "w-full min-w-0",
         selected
