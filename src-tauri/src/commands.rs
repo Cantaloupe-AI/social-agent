@@ -57,24 +57,3 @@ pub async fn save_config(config: Config) -> Result<(), String> {
     crate::config::save_config(&config).map_err(|e| e.to_string())
 }
 
-// Force full-process termination. macOS keeps Tauri apps alive after the last window
-// closes (standard AppKit behavior), which conflicts with the spec's "app closes itself
-// after save". Calling AppHandle::exit(0) terminates the process so the dock icon goes
-// away and the next launch is a fresh state.
-//
-// The exit is scheduled on a detached thread with a small delay so the IPC response to
-// this command can flush back to the WebView before the runtime is torn down. Calling
-// app.exit(0) inline caused the WebView to briefly render a "disconnected" error page
-// (user-reported as a "crash" even though the DB write completed cleanly).
-#[tauri::command]
-pub async fn quit_app(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    for (_, window) in app.webview_windows() {
-        let _ = window.hide();
-    }
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(60));
-        app.exit(0);
-    });
-    Ok(())
-}

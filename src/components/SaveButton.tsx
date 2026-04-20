@@ -21,10 +21,10 @@ export function SaveButton({ state, onSave, disabled }: SaveButtonProps) {
       </span>
       <Button
         onClick={onSave}
-        disabled={disabled || state !== "idle"}
+        disabled={disabled || state === "saving"}
         className={cn(
           "transition-opacity duration-150",
-          state === "saved" && "opacity-70",
+          state === "saved" && "opacity-80",
         )}
       >
         {label}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings } from "lucide-react";
 
 import { ActivityList } from "@/components/ActivityList";
@@ -10,7 +11,7 @@ import { useActivities } from "@/hooks/useActivities";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { useTodayEntry } from "@/hooks/useTodayEntry";
 import { mergeEntryWithFetched } from "@/lib/merge";
-import { loadConfig, quitApp, saveConfig, saveEntry } from "@/lib/tauri";
+import { loadConfig, saveConfig, saveEntry } from "@/lib/tauri";
 import { formatFriendlyDate } from "@/lib/time";
 import type { Config } from "@/lib/types";
 
@@ -86,16 +87,17 @@ export default function App() {
   );
 
   const handleSave = useCallback(async () => {
-    if (saveState !== "idle") return;
+    if (saveState === "saving") return;
     if (configOpen) return;
     setSaveState("saving");
     try {
       const included = activities.filter((a) => a.included);
       await saveEntry(included, thoughts);
+      setInitialThoughts(thoughts);
       setSaveState("saved");
       setTimeout(() => {
-        void quitApp();
-      }, 400);
+        setSaveState((s) => (s === "saved" ? "idle" : s));
+      }, 1200);
     } catch (e: unknown) {
       console.error("cantalog: saveEntry failed", e);
       setSaveState("idle");
@@ -116,7 +118,9 @@ export default function App() {
       );
       if (!proceed) return;
     }
-    void quitApp();
+    // Close the window. The backend's RunEvent::WindowEvent::Destroyed handler then
+    // calls app.exit(0) so the process terminates cleanly on macOS.
+    void getCurrentWindow().close();
   }, [dirty, configOpen]);
 
   useKeyboard({
