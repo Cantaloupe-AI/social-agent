@@ -172,10 +172,11 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <span
-              className="size-2 rounded-full bg-red-500"
-              aria-hidden
-              title="build marker"
-            />
+              className="font-mono text-[10px] text-muted-foreground tracking-tight select-all"
+              title="Git SHA of the commit this build was compiled from"
+            >
+              {__GIT_SHA__}
+            </span>
             <Button
               variant="ghost"
               size="icon-sm"
