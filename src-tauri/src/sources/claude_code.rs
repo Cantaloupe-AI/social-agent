@@ -6,6 +6,29 @@ use std::time::SystemTime;
 
 const SUMMARY_CHAR_LIMIT: usize = 80;
 
+/// Prefixes that identify Claude Code's internally-generated "user" messages —
+/// session caveats, slash-command dispatch, system reminders, interrupt markers.
+/// We skip any candidate whose trimmed content starts with one of these so the
+/// summary surfaces the actual first *typed* prompt instead of boilerplate.
+const SYSTEM_MESSAGE_PREFIXES: &[&str] = &[
+    "<local-command-caveat>",
+    "<local-command-stdout>",
+    "<local-command-stderr>",
+    "<command-name>",
+    "<command-message>",
+    "<command-args>",
+    "<system-reminder>",
+    "Caveat: The messages below were generated",
+    "[Request interrupted",
+];
+
+fn is_system_message(text: &str) -> bool {
+    let t = text.trim_start();
+    SYSTEM_MESSAGE_PREFIXES
+        .iter()
+        .any(|p| t.starts_with(p))
+}
+
 /// Returns the first human-typed user message summary from a Claude Code `.jsonl` file.
 ///
 /// Walks lines, skipping malformed ones and control records. A "line" yields a summary when
@@ -35,12 +58,18 @@ pub fn first_user_message(jsonl: &str) -> Option<String> {
             continue;
         };
         if let Some(s) = content.as_str() {
+            if is_system_message(s) {
+                continue;
+            }
             return Some(truncate_summary(s, SUMMARY_CHAR_LIMIT));
         }
         if let Some(arr) = content.as_array() {
             for block in arr {
                 if block.get("type").and_then(|t| t.as_str()) == Some("text") {
                     if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                        if is_system_message(text) {
+                            continue;
+                        }
                         return Some(truncate_summary(text, SUMMARY_CHAR_LIMIT));
                     }
                 }
@@ -168,6 +197,8 @@ mod tests {
         include_str!("../../tests/fixtures/claude/no_user.jsonl");
     const LONG_PROMPT: &str =
         include_str!("../../tests/fixtures/claude/long_prompt.jsonl");
+    const SYSTEM_WRAPPERS_THEN_REAL: &str =
+        include_str!("../../tests/fixtures/claude/system_wrappers_then_real.jsonl");
 
     fn fresh_temp(tag: &str) -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -202,6 +233,18 @@ mod tests {
             first_user_message(ARRAY_CONTENT).as_deref(),
             Some("Explain borrow checking to a Go developer.")
         );
+    }
+
+    #[test]
+    fn claude_code_system_wrappers_are_skipped_to_reach_real_prompt() {
+        let summary = first_user_message(SYSTEM_WRAPPERS_THEN_REAL).expect("summary");
+        assert!(
+            summary.starts_with("# Build: Cantalog"),
+            "expected real prompt, got {summary:?}"
+        );
+        // Make sure neither wrapper leaked through.
+        assert!(!summary.contains("local-command-caveat"));
+        assert!(!summary.contains("<command-name>"));
     }
 
     #[test]
