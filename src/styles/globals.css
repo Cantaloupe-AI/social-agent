@@ -123,3 +123,61 @@
         @apply bg-background text-foreground;
     }
 }
+
+/* Minimal typography for the in-app slide-source markdown preview.
+   Not a published artifact — this is just so the user can read what they typed. */
+.slide-md-preview h1,
+.slide-md-preview h2,
+.slide-md-preview h3 {
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0.6em 0 0.3em;
+}
+.slide-md-preview h1 { font-size: 1.25rem; }
+.slide-md-preview h2 { font-size: 1.1rem; }
+.slide-md-preview h3 { font-size: 1rem; }
+.slide-md-preview p { margin: 0.4em 0; }
+.slide-md-preview ul,
+.slide-md-preview ol { margin: 0.4em 0 0.4em 1.25em; }
+.slide-md-preview li { margin: 0.15em 0; }
+.slide-md-preview code {
+    font-family: ui-monospace, "JetBrains Mono", monospace;
+    font-size: 0.85em;
+    padding: 0 0.25em;
+    border-radius: 3px;
+    background: var(--muted);
+}
+.slide-md-preview pre {
+    background: var(--muted);
+    padding: 0.5em 0.75em;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.85em;
+}
+.slide-md-preview pre code {
+    background: transparent;
+    padding: 0;
+}
+.slide-md-preview blockquote {
+    border-left: 2px solid var(--border);
+    padding-left: 0.75em;
+    color: var(--muted-foreground);
+    margin: 0.5em 0;
+}
+.slide-md-preview a { color: var(--primary); text-decoration: underline; }
+.slide-md-preview hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 0.75em 0;
+}
+.slide-md-preview table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    font-size: 0.9em;
+}
+.slide-md-preview th,
+.slide-md-preview td {
+    border: 1px solid var(--border);
+    padding: 0.25em 0.5em;
+    text-align: left;
+}

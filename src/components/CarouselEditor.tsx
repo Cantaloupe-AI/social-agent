@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -263,32 +266,35 @@ function SlideEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      <Textarea
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          scheduleSave(e.target.value);
-        }}
-        onBlur={() => {
-          if (timerRef.current) {
-            window.clearTimeout(timerRef.current);
-            timerRef.current = null;
-          }
-          if (value !== initialContent) {
-            setSaveStatus("saving");
-            void onSave(value)
-              .then(() => {
-                setSaveStatus("saved");
-                window.setTimeout(() => {
-                  setSaveStatus((s) => (s === "saved" ? "idle" : s));
-                }, 1000);
-              })
-              .catch(() => setSaveStatus("idle"));
-          }
-        }}
-        placeholder="Slide content…"
-        className="min-h-[220px]"
-      />
+      <div className="grid gap-2 md:grid-cols-2">
+        <Textarea
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            scheduleSave(e.target.value);
+          }}
+          onBlur={() => {
+            if (timerRef.current) {
+              window.clearTimeout(timerRef.current);
+              timerRef.current = null;
+            }
+            if (value !== initialContent) {
+              setSaveStatus("saving");
+              void onSave(value)
+                .then(() => {
+                  setSaveStatus("saved");
+                  window.setTimeout(() => {
+                    setSaveStatus((s) => (s === "saved" ? "idle" : s));
+                  }, 1000);
+                })
+                .catch(() => setSaveStatus("idle"));
+            }
+          }}
+          placeholder="Slide content…"
+          className="min-h-[220px] font-mono text-xs"
+        />
+        <SlideMarkdownPreview source={value} />
+      </div>
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-muted-foreground">{statusLabel}</span>
         <Button
@@ -301,6 +307,23 @@ function SlideEditor({
           Delete slide
         </Button>
       </div>
+    </div>
+  );
+}
+
+function SlideMarkdownPreview({ source }: { source: string }) {
+  if (source.trim().length === 0) {
+    return (
+      <div className="min-h-[220px] rounded-md border border-input bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        Preview appears as you type.
+      </div>
+    );
+  }
+  return (
+    <div className="min-h-[220px] rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed slide-md-preview">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+        {source}
+      </ReactMarkdown>
     </div>
   );
 }
