@@ -1,5 +1,5 @@
 import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
-import type { Activity, Config, Entry } from "./types";
+import type { Activity, Carousel, Config, Entry, Slide } from "./types";
 
 // When the frontend is loaded in a plain browser (e.g. `bun run dev` for UI preview)
 // there's no Tauri IPC bridge. @tauri-apps/api's invoke() then tries to read
@@ -42,4 +42,39 @@ export async function loadConfig(): Promise<Config> {
 
 export async function saveConfig(config: Config): Promise<void> {
   await call<void>("save_config", { config });
+}
+
+export async function listCarousels(): Promise<Carousel[]> {
+  return call<Carousel[]>("list_carousels");
+}
+
+export async function createCarousel(label: string): Promise<Carousel> {
+  return call<Carousel>("create_carousel", { label });
+}
+
+export async function renameCarousel(id: string, label: string): Promise<void> {
+  await call<void>("rename_carousel", { id, label });
+}
+
+export async function deleteCarousel(id: string): Promise<void> {
+  await call<void>("delete_carousel", { id });
+}
+
+export async function listSlides(carouselId: string): Promise<Slide[]> {
+  return call<Slide[]>("list_slides", { carouselId });
+}
+
+export async function createSlide(carouselId: string): Promise<Slide> {
+  return call<Slide>("create_slide", { carouselId });
+}
+
+export async function updateSlideContent(
+  id: string,
+  content: string,
+): Promise<void> {
+  await call<void>("update_slide_content", { id, content });
+}
+
+export async function deleteSlide(id: string): Promise<void> {
+  await call<void>("delete_slide", { id });
 }

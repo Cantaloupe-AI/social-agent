@@ -14,6 +14,14 @@ pub fn run() {
             commands::save_entry,
             commands::load_config,
             commands::save_config,
+            commands::list_carousels,
+            commands::create_carousel,
+            commands::rename_carousel,
+            commands::delete_carousel,
+            commands::list_slides,
+            commands::create_slide,
+            commands::update_slide_content,
+            commands::delete_slide,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

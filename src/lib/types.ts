@@ -29,3 +29,19 @@ export interface Config {
   git: GitConfig;
   claude_code: ClaudeCodeConfig;
 }
+
+export interface Carousel {
+  id: string;
+  label: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Slide {
+  id: string;
+  carousel_id: string;
+  order_index: number;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}

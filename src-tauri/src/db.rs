@@ -1,8 +1,9 @@
-use crate::types::{Activity, Entry};
+use crate::types::{Activity, Carousel, Entry, Slide};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
+use uuid::Uuid;
 
 pub const DB_FILENAME: &str = "db.sqlite";
 
@@ -25,6 +26,8 @@ pub fn open_in_memory() -> Result<Connection> {
 pub fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         r#"
+        PRAGMA foreign_keys = ON;
+
         CREATE TABLE IF NOT EXISTS entries (
             date TEXT PRIMARY KEY,
             activities_json TEXT NOT NULL,
@@ -32,6 +35,24 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS carousels (
+            id         TEXT PRIMARY KEY,
+            label      TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS slides (
+            id           TEXT PRIMARY KEY,
+            carousel_id  TEXT NOT NULL REFERENCES carousels(id) ON DELETE CASCADE,
+            order_index  INTEGER NOT NULL,
+            content      TEXT NOT NULL DEFAULT '',
+            created_at   TEXT NOT NULL,
+            updated_at   TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_slides_carousel ON slides (carousel_id, order_index);
         "#,
     )
     .context("running migrations")?;
@@ -103,6 +124,183 @@ pub fn load_entry(conn: &Connection, date: &str) -> Result<Option<Entry>> {
         created_at,
         updated_at,
     }))
+}
+
+fn parse_rfc3339(s: &str) -> Result<DateTime<Utc>> {
+    Ok(DateTime::parse_from_rfc3339(s)
+        .context("parsing rfc3339 timestamp")?
+        .with_timezone(&Utc))
+}
+
+pub fn list_carousels(conn: &Connection) -> Result<Vec<Carousel>> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT id, label, created_at, updated_at
+            FROM carousels
+            ORDER BY updated_at DESC
+            "#,
+        )
+        .context("preparing list_carousels")?;
+    let rows = stmt
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let label: String = row.get(1)?;
+            let created_at: String = row.get(2)?;
+            let updated_at: String = row.get(3)?;
+            Ok((id, label, created_at, updated_at))
+        })
+        .context("querying carousels")?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (id, label, created_at, updated_at) = r.context("reading carousel row")?;
+        out.push(Carousel {
+            id,
+            label,
+            created_at: parse_rfc3339(&created_at)?,
+            updated_at: parse_rfc3339(&updated_at)?,
+        });
+    }
+    Ok(out)
+}
+
+pub fn create_carousel(conn: &Connection, label: &str) -> Result<Carousel> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        INSERT INTO carousels (id, label, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?3)
+        "#,
+        params![id, label, now],
+    )
+    .context("inserting carousel")?;
+    Ok(Carousel {
+        id,
+        label: label.to_string(),
+        created_at: parse_rfc3339(&now)?,
+        updated_at: parse_rfc3339(&now)?,
+    })
+}
+
+pub fn rename_carousel(conn: &Connection, id: &str, new_label: &str) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE carousels
+        SET label = ?2, updated_at = ?3
+        WHERE id = ?1
+        "#,
+        params![id, new_label, now],
+    )
+    .context("renaming carousel")?;
+    Ok(())
+}
+
+pub fn delete_carousel(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM carousels WHERE id = ?1", params![id])
+        .context("deleting carousel")?;
+    Ok(())
+}
+
+pub fn list_slides(conn: &Connection, carousel_id: &str) -> Result<Vec<Slide>> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT id, carousel_id, order_index, content, created_at, updated_at
+            FROM slides
+            WHERE carousel_id = ?1
+            ORDER BY order_index ASC
+            "#,
+        )
+        .context("preparing list_slides")?;
+    let rows = stmt
+        .query_map(params![carousel_id], |row| {
+            let id: String = row.get(0)?;
+            let carousel_id: String = row.get(1)?;
+            let order_index: i64 = row.get(2)?;
+            let content: String = row.get(3)?;
+            let created_at: String = row.get(4)?;
+            let updated_at: String = row.get(5)?;
+            Ok((id, carousel_id, order_index, content, created_at, updated_at))
+        })
+        .context("querying slides")?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (id, carousel_id, order_index, content, created_at, updated_at) =
+            r.context("reading slide row")?;
+        out.push(Slide {
+            id,
+            carousel_id,
+            order_index,
+            content,
+            created_at: parse_rfc3339(&created_at)?,
+            updated_at: parse_rfc3339(&updated_at)?,
+        });
+    }
+    Ok(out)
+}
+
+pub fn create_slide(conn: &Connection, carousel_id: &str) -> Result<Slide> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let next_index: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(order_index) + 1, 0) FROM slides WHERE carousel_id = ?1",
+            params![carousel_id],
+            |row| row.get(0),
+        )
+        .context("computing next order_index")?;
+    conn.execute(
+        r#"
+        INSERT INTO slides (id, carousel_id, order_index, content, created_at, updated_at)
+        VALUES (?1, ?2, ?3, '', ?4, ?4)
+        "#,
+        params![id, carousel_id, next_index, now],
+    )
+    .context("inserting slide")?;
+    Ok(Slide {
+        id,
+        carousel_id: carousel_id.to_string(),
+        order_index: next_index,
+        content: String::new(),
+        created_at: parse_rfc3339(&now)?,
+        updated_at: parse_rfc3339(&now)?,
+    })
+}
+
+pub fn update_slide_content(conn: &Connection, id: &str, content: &str) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE slides
+        SET content = ?2, updated_at = ?3
+        WHERE id = ?1
+        "#,
+        params![id, content, now],
+    )
+    .context("updating slide content")?;
+    Ok(())
+}
+
+pub fn delete_slide(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM slides WHERE id = ?1", params![id])
+        .context("deleting slide")?;
+    Ok(())
+}
+
+pub fn reorder_slide(conn: &Connection, id: &str, new_index: i64) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE slides
+        SET order_index = ?2, updated_at = ?3
+        WHERE id = ?1
+        "#,
+        params![id, new_index, now],
+    )
+    .context("reordering slide")?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -187,4 +385,84 @@ mod tests {
         save_entry(&conn, "2026-04-19", &[], "ok").unwrap();
         assert!(load_entry(&conn, "2026-04-19").unwrap().is_some());
     }
+
+    #[test]
+    fn carousels_roundtrip() {
+        let conn = open_in_memory().unwrap();
+        let a = create_carousel(&conn, "Launch week").unwrap();
+        let b = create_carousel(&conn, "Weekly recap").unwrap();
+        assert_ne!(a.id, b.id);
+
+        let listed = list_carousels(&conn).unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().any(|c| c.label == "Launch week"));
+
+        rename_carousel(&conn, &a.id, "Launch week v2").unwrap();
+        let after = list_carousels(&conn).unwrap();
+        assert!(after.iter().any(|c| c.id == a.id && c.label == "Launch week v2"));
+
+        delete_carousel(&conn, &b.id).unwrap();
+        let remaining = list_carousels(&conn).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, a.id);
+    }
+
+    #[test]
+    fn carousel_label_unique() {
+        let conn = open_in_memory().unwrap();
+        create_carousel(&conn, "Same").unwrap();
+        let err = create_carousel(&conn, "Same");
+        assert!(err.is_err(), "expected unique constraint error");
+    }
+
+    #[test]
+    fn slides_roundtrip() {
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "Deck").unwrap();
+
+        let s1 = create_slide(&conn, &c.id).unwrap();
+        let s2 = create_slide(&conn, &c.id).unwrap();
+        let s3 = create_slide(&conn, &c.id).unwrap();
+        assert_eq!(s1.order_index, 0);
+        assert_eq!(s2.order_index, 1);
+        assert_eq!(s3.order_index, 2);
+
+        update_slide_content(&conn, &s2.id, "hello world").unwrap();
+        let listed = list_slides(&conn, &c.id).unwrap();
+        assert_eq!(listed.len(), 3);
+        assert_eq!(listed[0].id, s1.id);
+        assert_eq!(listed[1].content, "hello world");
+
+        delete_slide(&conn, &s1.id).unwrap();
+        let after = list_slides(&conn, &c.id).unwrap();
+        assert_eq!(after.len(), 2);
+        assert_eq!(after[0].id, s2.id);
+    }
+
+    #[test]
+    fn delete_carousel_cascades_slides() {
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "Doomed").unwrap();
+        create_slide(&conn, &c.id).unwrap();
+        create_slide(&conn, &c.id).unwrap();
+        assert_eq!(list_slides(&conn, &c.id).unwrap().len(), 2);
+
+        delete_carousel(&conn, &c.id).unwrap();
+        let orphan_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM slides", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphan_count, 0);
+    }
+
+    #[test]
+    fn migrate_is_idempotent_with_new_tables() {
+        let conn = open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let c = create_carousel(&conn, "idem").unwrap();
+        create_slide(&conn, &c.id).unwrap();
+        assert_eq!(list_carousels(&conn).unwrap().len(), 1);
+        assert_eq!(list_slides(&conn, &c.id).unwrap().len(), 1);
+    }
+
 }

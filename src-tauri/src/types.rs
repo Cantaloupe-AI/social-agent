@@ -46,3 +46,21 @@ pub struct GitConfig {
 pub struct ClaudeCodeConfig {
     pub projects_dir: PathBuf,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Carousel {
+    pub id: String,
+    pub label: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Slide {
+    pub id: String,
+    pub carousel_id: String,
+    pub order_index: i64,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
