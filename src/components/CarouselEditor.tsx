@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileDown, Loader2, Plus, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSlides } from "@/hooks/useSlides";
+import {
+  cancelGeneration,
+  generateCarouselPdf,
+  getCarousel,
+} from "@/lib/tauri";
+import type { CarouselStatus, SlideStatus } from "@/lib/types";
 
 interface CarouselEditorProps {
   carouselId: string;
@@ -24,9 +30,11 @@ export function CarouselEditor({
   onRename,
   onBack,
 }: CarouselEditorProps) {
-  const { slides, loading, error, create, updateContent, remove } =
+  const { slides, loading, error, create, updateContent, remove, refresh } =
     useSlides(carouselId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [carouselStatus, setCarouselStatus] = useState<CarouselStatus>("idle");
+  const [genError, setGenError] = useState<string | null>(null);
 
   // Keep a valid active tab as slides change.
   useEffect(() => {
@@ -39,12 +47,72 @@ export function CarouselEditor({
     }
   }, [slides, activeId]);
 
+  // Initial fetch of the carousel's stored status (in case a previous run
+  // left it 'done' or 'failed' — we want to reflect that on entry).
+  useEffect(() => {
+    let cancelled = false;
+    getCarousel(carouselId)
+      .then((c) => {
+        if (!cancelled && c) setCarouselStatus(c.status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [carouselId]);
+
+  // Poll while generating. Stops when status leaves 'generating'.
+  useEffect(() => {
+    if (carouselStatus !== "generating") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const c = await getCarousel(carouselId);
+        if (cancelled) return;
+        if (c) setCarouselStatus(c.status);
+        await refresh();
+      } catch {
+        // Best-effort polling — surface errors via genError on user actions only.
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [carouselStatus, carouselId, refresh]);
+
   async function addSlide() {
     const s = await create();
     setActiveId(s.id);
   }
 
+  async function startGeneration() {
+    setGenError(null);
+    if (slides.length === 0) {
+      setGenError("Add at least one slide before generating.");
+      return;
+    }
+    try {
+      await generateCarouselPdf(carouselId);
+      setCarouselStatus("generating");
+    } catch (e: unknown) {
+      setGenError(String(e));
+    }
+  }
+
+  async function stopGeneration() {
+    try {
+      await cancelGeneration(carouselId);
+      setCarouselStatus("failed");
+    } catch (e: unknown) {
+      setGenError(String(e));
+    }
+  }
+
   const slideCount = slides.length;
+  const isGenerating = carouselStatus === "generating";
 
   return (
     <div className="flex flex-col gap-4">
@@ -59,15 +127,49 @@ export function CarouselEditor({
             initialLabel={label}
             onRename={onRename}
           />
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {slideCount} {slideCount === 1 ? "slide" : "slides"}
+          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+            <span>
+              {slideCount} {slideCount === 1 ? "slide" : "slides"}
+            </span>
+            <CarouselStatusPill status={carouselStatus} />
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void addSlide()}>
+        {isGenerating ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void stopGeneration()}
+          >
+            <X className="size-3.5" />
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void startGeneration()}
+            disabled={slideCount === 0}
+          >
+            <FileDown className="size-3.5" />
+            Generate PDF
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void addSlide()}
+          disabled={isGenerating}
+        >
           <Plus className="size-3.5" />
           New slide
         </Button>
       </div>
+
+      {genError && (
+        <div className="text-xs text-destructive border border-destructive/40 rounded-md p-2 bg-destructive/10">
+          {genError}
+        </div>
+      )}
 
       {error && (
         <div className="text-xs text-destructive border border-destructive/40 rounded-md p-2 bg-destructive/10">
@@ -93,7 +195,8 @@ export function CarouselEditor({
           <TabsList>
             {slides.map((s, i) => (
               <TabsTrigger key={s.id} value={s.id}>
-                Slide {i + 1}
+                <span>Slide {i + 1}</span>
+                <SlideStatusPill status={s.status} />
               </TabsTrigger>
             ))}
           </TabsList>
@@ -308,6 +411,55 @@ function SlideEditor({
         </Button>
       </div>
     </div>
+  );
+}
+
+function CarouselStatusPill({ status }: { status: CarouselStatus }) {
+  if (status === "idle") return null;
+  if (status === "generating") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:text-amber-200">
+        <Loader2 className="size-2.5 animate-spin" />
+        generating
+      </span>
+    );
+  }
+  if (status === "done") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 dark:text-emerald-200">
+        done
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+      failed
+    </span>
+  );
+}
+
+function SlideStatusPill({ status }: { status: SlideStatus }) {
+  if (status === "idle") return null;
+  const palette: Record<Exclude<SlideStatus, "idle">, string> = {
+    queued:
+      "bg-muted text-muted-foreground",
+    generating:
+      "bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200",
+    reviewing:
+      "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200",
+    accepted:
+      "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200",
+    failed:
+      "bg-destructive/10 text-destructive",
+  };
+  const showSpinner = status === "generating" || status === "reviewing";
+  return (
+    <span
+      className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-medium ${palette[status]}`}
+    >
+      {showSpinner && <Loader2 className="size-2 animate-spin" />}
+      {status}
+    </span>
   );
 }
 

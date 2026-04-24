@@ -8,6 +8,7 @@ pub mod types;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(commands::GenerationProcesses::default())
         .invoke_handler(tauri::generate_handler![
             commands::fetch_today_activities,
             commands::load_today_entry,
@@ -15,6 +16,7 @@ pub fn run() {
             commands::load_config,
             commands::save_config,
             commands::list_carousels,
+            commands::get_carousel,
             commands::create_carousel,
             commands::rename_carousel,
             commands::delete_carousel,
@@ -22,6 +24,10 @@ pub fn run() {
             commands::create_slide,
             commands::update_slide_content,
             commands::delete_slide,
+            commands::list_slide_versions,
+            commands::list_slide_feedback,
+            commands::generate_carousel_pdf,
+            commands::cancel_generation,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

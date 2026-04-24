@@ -1,5 +1,13 @@
 import { invoke, type InvokeArgs } from "@tauri-apps/api/core";
-import type { Activity, Carousel, Config, Entry, Slide } from "./types";
+import type {
+  Activity,
+  Carousel,
+  Config,
+  Entry,
+  Slide,
+  SlideFeedback,
+  SlideVersion,
+} from "./types";
 
 // When the frontend is loaded in a plain browser (e.g. `bun run dev` for UI preview)
 // there's no Tauri IPC bridge. @tauri-apps/api's invoke() then tries to read
@@ -48,6 +56,10 @@ export async function listCarousels(): Promise<Carousel[]> {
   return call<Carousel[]>("list_carousels");
 }
 
+export async function getCarousel(id: string): Promise<Carousel | null> {
+  return call<Carousel | null>("get_carousel", { id });
+}
+
 export async function createCarousel(label: string): Promise<Carousel> {
   return call<Carousel>("create_carousel", { label });
 }
@@ -77,4 +89,22 @@ export async function updateSlideContent(
 
 export async function deleteSlide(id: string): Promise<void> {
   await call<void>("delete_slide", { id });
+}
+
+export async function listSlideVersions(slideId: string): Promise<SlideVersion[]> {
+  return call<SlideVersion[]>("list_slide_versions", { slideId });
+}
+
+export async function listSlideFeedback(
+  slideVersionId: string,
+): Promise<SlideFeedback[]> {
+  return call<SlideFeedback[]>("list_slide_feedback", { slideVersionId });
+}
+
+export async function generateCarouselPdf(carouselId: string): Promise<void> {
+  await call<void>("generate_carousel_pdf", { carouselId });
+}
+
+export async function cancelGeneration(carouselId: string): Promise<void> {
+  await call<void>("cancel_generation", { carouselId });
 }
