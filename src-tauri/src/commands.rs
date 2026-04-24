@@ -576,24 +576,13 @@ pub async fn cancel_generation(
     carousel_id: String,
 ) -> Result<(), String> {
     // Look up the process handle without removing it — the watcher thread
-    // owns the lifecycle and will reap on next try_wait().
+    // owns the lifecycle and will reap on next try_wait(). If there's no
+    // handle, the run already finished (done OR failed); cancel is a no-op
+    // in that case. Do NOT defensively flip status here — that would turn a
+    // completed 'done' into 'failed'.
     let state = app.state::<GenerationProcesses>();
     let map = state.0.lock().map_err(|e| e.to_string())?;
     let Some(handle) = map.get(&carousel_id) else {
-        // No active run; nothing to do beyond defensively flipping status.
-        drop(map);
-        if let Ok(conn) = open_db() {
-            if let Err(e) = crate::db::set_carousel_run_finished(
-                &conn,
-                &carousel_id,
-                CarouselStatus::Failed,
-                None,
-            ) {
-                eprintln!(
-                    "cantalog: cancel_generation defensive set_run_finished failed: {e}"
-                );
-            }
-        }
         return Ok(());
     };
     let inner = handle.inner.clone();
