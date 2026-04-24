@@ -1,19 +1,26 @@
 #!/usr/bin/env bun
 /**
- * Carousel generation driver — Phase 3 (implementation agent only).
+ * Carousel generation driver — Phase 4 (implementation + manager loop).
  *
  * Spawned by the Tauri backend with one argument: the carousel id.
  * Reads the cantalog SQLite db directly via bun:sqlite and writes status
  * updates as it goes. The frontend polls the same db to display progress.
  *
- * Phase 4 will add the manager agent + iteration loop. For now: one
- * implementation pass per slide, then the slide is marked accepted and
- * we move on. PDF concatenation comes in Phase 5.
+ * Per slide: up to MAX_ITERS rounds of (implementation agent → puppeteer
+ * render → manager agent review). Loop exits early on accept; on
+ * exhaustion the slide is marked failed. PDF concatenation comes in Phase 5.
  */
 
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -28,8 +35,12 @@ const DB_PATH = join(DATA_DIR, "db.sqlite");
 const CAROUSELS_DIR = join(DATA_DIR, "carousels");
 
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
+const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
 
 const MODEL = "claude-opus-4-7";
+
+/** Maximum implement→review rounds per slide before we give up. */
+const MAX_ITERS = 4;
 
 // ─── DB helpers ─────────────────────────────────────────────────────────────
 
@@ -147,6 +158,22 @@ function updateSlideVersionRenders(
   );
 }
 
+function insertSlideFeedback(
+  db: Database,
+  slideVersionId: string,
+  accepted: boolean,
+  feedback: string,
+) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO slide_feedback
+       (id, slide_version_id, accepted, feedback, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [id, slideVersionId, accepted ? 1 : 0, feedback, now],
+  );
+}
+
 // ─── Run-dir resolution (no overwriting existing runs) ─────────────────────
 
 async function nextRunDir(slug: string): Promise<string> {
@@ -168,36 +195,21 @@ async function nextRunDir(slug: string): Promise<string> {
 
 // ─── Implementation agent invocation ───────────────────────────────────────
 
-async function runImplementer(opts: {
-  slideDir: string;
-  versionFilename: string; // e.g. "v1.html"
+async function driveAgent(opts: {
+  cwd: string;
   systemPrompt: string;
-  iterationFeedback: string | null;
+  prompt: string;
+  allowedTools: string[];
+  label: string;
 }): Promise<void> {
-  const promptParts = [
-    `You are running for slide working directory: ${opts.slideDir}`,
-    `Write your output to: ${opts.versionFilename}`,
-    `Read source.md for the slide markdown.`,
-  ];
-  if (opts.iterationFeedback) {
-    promptParts.push(
-      `feedback.md exists with this manager review — address every point:\n${opts.iterationFeedback}`,
-    );
-  } else {
-    promptParts.push(
-      `This is the first iteration; feedback.md does not exist yet.`,
-    );
-  }
-  const prompt = promptParts.join("\n\n");
-
   const q = query({
-    prompt,
+    prompt: opts.prompt,
     options: {
       model: MODEL,
-      cwd: opts.slideDir,
+      cwd: opts.cwd,
       systemPrompt: opts.systemPrompt,
       permissionMode: "auto",
-      allowedTools: ["Read", "Write", "Edit"],
+      allowedTools: opts.allowedTools,
     },
   });
 
@@ -210,13 +222,97 @@ async function runImplementer(opts: {
     }
   }
   if (!resultMessage) {
-    throw new Error("Implementation agent ended without a result message");
+    throw new Error(`${opts.label} ended without a result message`);
   }
   if (resultMessage.is_error) {
     throw new Error(
-      `Implementation agent errored: ${resultMessage.subtype}`,
+      `${opts.label} errored: ${resultMessage.subtype}`,
     );
   }
+}
+
+async function runImplementer(opts: {
+  slideDir: string;
+  versionFilename: string;
+  systemPrompt: string;
+  iterationFeedback: string | null;
+  prevHtmlFilename: string | null;
+}): Promise<void> {
+  const promptParts = [
+    `Working directory: ${opts.slideDir}`,
+    `Read source.md.`,
+    `Write your output to: ${opts.versionFilename}`,
+  ];
+  if (opts.prevHtmlFilename) {
+    promptParts.push(
+      `Previous version is ${opts.prevHtmlFilename}. Use it as your starting point.`,
+    );
+  }
+  if (opts.iterationFeedback) {
+    promptParts.push(
+      `feedback.md exists with this manager review. Address every point:\n${opts.iterationFeedback}`,
+    );
+  } else {
+    promptParts.push(`This is the first iteration. No feedback yet.`);
+  }
+  await driveAgent({
+    cwd: opts.slideDir,
+    systemPrompt: opts.systemPrompt,
+    prompt: promptParts.join("\n\n"),
+    allowedTools: ["Read", "Write", "Edit"],
+    label: "Implementation agent",
+  });
+}
+
+interface ManagerVerdict {
+  accepted: boolean;
+  feedback: string;
+}
+
+async function runManager(opts: {
+  slideDir: string;
+  versionFilename: string; // v{N}.html
+  screenshotFilename: string; // v{N}.png
+  systemPrompt: string;
+}): Promise<ManagerVerdict> {
+  const reviewPath = join(opts.slideDir, "review.json");
+  await rm(reviewPath, { force: true });
+
+  const prompt = [
+    `Working directory: ${opts.slideDir}`,
+    `Review ${opts.versionFilename} (rendered to ${opts.screenshotFilename}).`,
+    `Write your verdict to review.json with shape { "accepted": bool, "feedback": string }.`,
+  ].join("\n\n");
+
+  await driveAgent({
+    cwd: opts.slideDir,
+    systemPrompt: opts.systemPrompt,
+    prompt,
+    allowedTools: ["Read", "Write"],
+    label: "Manager agent",
+  });
+
+  if (!existsSync(reviewPath)) {
+    throw new Error("Manager agent did not write review.json");
+  }
+  const text = await readFile(reviewPath, "utf8");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Manager agent wrote invalid JSON: ${(e as Error).message}`);
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof (parsed as { accepted?: unknown }).accepted !== "boolean" ||
+    typeof (parsed as { feedback?: unknown }).feedback !== "string"
+  ) {
+    throw new Error(
+      `Manager agent review.json missing required fields { accepted: bool, feedback: string }`,
+    );
+  }
+  return parsed as ManagerVerdict;
 }
 
 // ─── Per-slide pipeline (Phase 3: impl + render, no manager) ───────────────
@@ -226,9 +322,11 @@ async function generateSlide(opts: {
   slide: SlideRow;
   slideIndex: number;
   runDir: string;
-  systemPrompt: string;
+  implPrompt: string;
+  managerPrompt: string;
+  log: (line: string) => void;
 }) {
-  const { db, slide, slideIndex, runDir, systemPrompt } = opts;
+  const { db, slide, slideIndex, runDir, implPrompt, managerPrompt, log } = opts;
   const slideFolderName = `${String(slideIndex).padStart(2, "0")}-${slide.id}`;
   const slideDir = join(runDir, "slides", slideFolderName);
   await mkdir(slideDir, { recursive: true });
@@ -236,34 +334,71 @@ async function generateSlide(opts: {
   // Freeze the source markdown at run start.
   await writeFile(join(slideDir, "source.md"), slide.content, "utf8");
 
-  setSlideStatus(db, slide.id, "generating");
+  let lastFeedback: string | null = null;
+  let prevHtmlFilename: string | null = null;
 
-  const versionFilename = "v1.html";
-  const htmlPath = join(slideDir, versionFilename);
-  const pngPath = join(slideDir, "v1.png");
-  const pdfPath = join(slideDir, "v1.pdf");
+  for (let iter = 1; iter <= MAX_ITERS; iter++) {
+    const htmlFilename = `v${iter}.html`;
+    const pngFilename = `v${iter}.png`;
+    const pdfFilename = `v${iter}.pdf`;
+    const htmlPath = join(slideDir, htmlFilename);
+    const pngPath = join(slideDir, pngFilename);
+    const pdfPath = join(slideDir, pdfFilename);
 
-  await runImplementer({
-    slideDir,
-    versionFilename,
-    systemPrompt,
-    iterationFeedback: null,
-  });
+    // Step 1 — implementation agent writes v{iter}.html
+    setSlideStatus(db, slide.id, "generating");
+    if (lastFeedback != null) {
+      await writeFile(join(slideDir, "feedback.md"), lastFeedback, "utf8");
+    }
+    log(`  iter ${iter}: implementation agent`);
+    await runImplementer({
+      slideDir,
+      versionFilename: htmlFilename,
+      systemPrompt: implPrompt,
+      iterationFeedback: lastFeedback,
+      prevHtmlFilename: prevHtmlFilename,
+    });
+    if (!existsSync(htmlPath)) {
+      throw new Error(`Implementation agent did not write ${htmlFilename}`);
+    }
+    const version = insertSlideVersion(db, slide.id, htmlPath);
 
-  if (!existsSync(htmlPath)) {
-    throw new Error(`Implementation agent did not write ${versionFilename}`);
+    // Step 2 — render with puppeteer
+    log(`  iter ${iter}: render`);
+    await renderSlide({ htmlPath, pngPath, pdfPath });
+    updateSlideVersionRenders(db, version.id, pngPath, pdfPath);
+
+    // Step 3 — manager agent reviews
+    setSlideStatus(db, slide.id, "reviewing");
+    log(`  iter ${iter}: manager review`);
+    const verdict = await runManager({
+      slideDir,
+      versionFilename: htmlFilename,
+      screenshotFilename: pngFilename,
+      systemPrompt: managerPrompt,
+    });
+    insertSlideFeedback(db, version.id, verdict.accepted, verdict.feedback);
+
+    if (verdict.accepted) {
+      log(`  iter ${iter}: ✓ accepted`);
+      setSlideStatus(db, slide.id, "accepted");
+      return;
+    }
+
+    log(`  iter ${iter}: ✗ rejected — ${verdict.feedback.split("\n")[0]}`);
+    lastFeedback = verdict.feedback;
+    prevHtmlFilename = htmlFilename;
   }
 
-  const version = insertSlideVersion(db, slide.id, htmlPath);
-
-  // Render with puppeteer
-  await renderSlide({ htmlPath, pngPath, pdfPath });
-  updateSlideVersionRenders(db, version.id, pngPath, pdfPath);
-
-  // Phase 3 stops here — no manager review yet. Mark accepted as a placeholder
-  // so the user sees the slide finished. Phase 4 will replace this with a real
-  // accept/reject loop driven by the manager agent.
-  setSlideStatus(db, slide.id, "accepted");
+  setSlideStatus(
+    db,
+    slide.id,
+    "failed",
+    `manager rejected ${MAX_ITERS} iterations`,
+  );
+  throw new Error(
+    `Slide ${slide.id} not accepted after ${MAX_ITERS} iterations`,
+  );
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────
@@ -300,7 +435,8 @@ async function main() {
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
 
-  const systemPrompt = await Bun.file(IMPL_PROMPT_PATH).text();
+  const implPrompt = await Bun.file(IMPL_PROMPT_PATH).text();
+  const managerPrompt = await Bun.file(MGR_PROMPT_PATH).text();
 
   let allOk = true;
   for (let i = 0; i < slides.length; i++) {
@@ -312,12 +448,16 @@ async function main() {
         slide,
         slideIndex: i,
         runDir,
-        systemPrompt,
+        implPrompt,
+        managerPrompt,
+        log,
       });
-      log(`✓ slide ${i + 1} accepted (Phase 3: no manager review yet)`);
+      log(`✓ slide ${i + 1} done`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`✗ slide ${i + 1} failed: ${msg}`);
+      // setSlideStatus already called inside generateSlide on max-iters,
+      // but guard against earlier throws (e.g. agent ran into an SDK error).
       setSlideStatus(db, slide.id, "failed", msg);
       allOk = false;
     }
