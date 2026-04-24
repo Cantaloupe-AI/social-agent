@@ -19,7 +19,7 @@ import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { PDFDocument } from "pdf-lib";
@@ -181,6 +181,44 @@ function updateSlideVersionRenders(
     `UPDATE slide_versions SET screenshot_path = ?, pdf_path = ? WHERE id = ?`,
     [screenshotPath, pdfPath, id],
   );
+}
+
+interface AcceptedVersion {
+  version_number: number;
+  html_path: string;
+  pdf_path: string | null;
+}
+
+/**
+ * Find the highest-numbered slide_version for `slideId` that the manager
+ * accepted. Returns null if there's never been an accept.
+ *
+ * The latest manager_feedback row per version is taken to be the verdict
+ * (one feedback per version per run today, but the LIMIT 1 ORDER BY
+ * created_at DESC is defensive for future re-reviews).
+ */
+function findLatestAcceptedVersion(
+  db: Database,
+  slideId: string,
+): AcceptedVersion | null {
+  const row = db
+    .query<AcceptedVersion, [string]>(
+      `SELECT v.version_number, v.html_path, v.pdf_path
+         FROM slide_versions v
+         JOIN slide_feedback f ON f.slide_version_id = v.id
+        WHERE v.slide_id = ?
+          AND f.id = (
+            SELECT id FROM slide_feedback
+              WHERE slide_version_id = v.id
+              ORDER BY created_at DESC
+              LIMIT 1
+          )
+          AND f.accepted = TRUE
+        ORDER BY v.version_number DESC
+        LIMIT 1`,
+    )
+    .get(slideId);
+  return row ?? null;
 }
 
 function insertSlideFeedback(
@@ -388,6 +426,41 @@ async function generateSlide(opts: {
 
   // Freeze the source markdown at run start.
   await writeFile(join(slideDir, "source.md"), slide.content, "utf8");
+
+  // Skip the agent loop if we have a previously-accepted version whose
+  // markdown matches the current slide content. The PDF concat step picks
+  // up the prior run's pdf via slide_versions.pdf_path (latest version
+  // wins), so we don't need to insert a new version row — the existing
+  // accepted one IS the current one.
+  const accepted = findLatestAcceptedVersion(db, slide.id);
+  if (accepted) {
+    const priorSourcePath = join(dirname(accepted.html_path), "source.md");
+    const priorPdfMissing =
+      !accepted.pdf_path || !existsSync(accepted.pdf_path);
+    const priorSourceMissing = !existsSync(priorSourcePath);
+    if (priorSourceMissing || priorPdfMissing) {
+      log(
+        `  prior accepted v${accepted.version_number} files missing` +
+          ` (source.md=${!priorSourceMissing}, pdf=${!priorPdfMissing});` +
+          ` regenerating`,
+      );
+    } else {
+      const priorSource = (
+        await readFile(priorSourcePath, "utf8")
+      ).trim();
+      const currentSource = slide.content.trim();
+      if (priorSource === currentSource) {
+        log(
+          `  ✓ skipping — markdown unchanged since accepted v${accepted.version_number}`,
+        );
+        setSlideStatus(db, slide.id, "accepted");
+        return;
+      }
+      log(
+        `  markdown changed since accepted v${accepted.version_number}; regenerating`,
+      );
+    }
+  }
 
   let lastFeedback: string | null = null;
   let prevHtmlFilename: string | null = null;
