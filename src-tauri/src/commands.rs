@@ -394,98 +394,140 @@ pub async fn generate_carousel_pdf(
     let watcher_log_path = log_path.clone();
     let watcher_proc = proc.clone();
     thread::spawn(move || {
-        // Poll try_wait under the same lock cancel_generation uses for kill().
-        // The 150 ms cadence keeps cancel responsive without burning CPU.
-        let status = loop {
+        // Every exit path from this thread funnels through finalize_run:
+        // labelled-break out of the poll loop with a reason string, then
+        // run cleanup unconditionally. No silent returns.
+        // (Per CLAUDE.md §conventions/errors: supervisor threads MUST flip
+        // the observable state they own on every exit path.)
+        let exit_reason: String = 'wait: loop {
             thread::sleep(Duration::from_millis(150));
             let mut guard = match watcher_proc.lock() {
                 Ok(g) => g,
-                Err(e) => {
-                    append_log_line(
-                        &watcher_log_path,
-                        &format!("[supervisor] mutex poisoned: {e}"),
-                    );
-                    return;
-                }
+                Err(e) => break 'wait format!("mutex poisoned: {e}"),
             };
             let child = match guard.as_mut() {
                 Some(c) => c,
-                None => return, // somebody else already reaped — shouldn't happen
+                None => break 'wait "child handle missing".to_string(),
             };
             match child.try_wait() {
-                Ok(Some(s)) => break s,
+                Ok(Some(s)) => break 'wait format!("bun driver exited with {s}"),
                 Ok(None) => continue,
-                Err(e) => {
-                    append_log_line(
-                        &watcher_log_path,
-                        &format!("[supervisor] try_wait error: {e}"),
-                    );
-                    return;
-                }
+                Err(e) => break 'wait format!("try_wait error: {e}"),
             }
         };
 
-        append_log_line(
+        finalize_run(
+            &app_handle,
+            &watcher_carousel_id,
             &watcher_log_path,
-            &format!("[supervisor] [exit] bun driver exited with {status}"),
+            &watcher_proc,
+            &exit_reason,
         );
-
-        // Drop the Child from the map so a new run can start.
-        if let Ok(mut guard) = watcher_proc.lock() {
-            *guard = None;
-        }
-        if let Some(state) = Some(app_handle.state::<GenerationProcesses>()) {
-            if let Ok(mut map) = state.0.lock() {
-                map.remove(&watcher_carousel_id);
-            }
-        }
-
-        // If the carousel is still 'generating', the bun script never got to
-        // call set_carousel_run_finished (crash, kill, hard error). Mark it
-        // failed loudly so the UI doesn't hang.
-        match open_db() {
-            Ok(conn) => match crate::db::get_carousel(&conn, &watcher_carousel_id) {
-                Ok(Some(c)) => {
-                    if c.status == CarouselStatus::Generating {
-                        if let Err(e) = crate::db::set_carousel_run_finished(
-                            &conn,
-                            &watcher_carousel_id,
-                            CarouselStatus::Failed,
-                            None,
-                        ) {
-                            append_log_line(
-                                &watcher_log_path,
-                                &format!(
-                                    "[supervisor] failed to mark carousel failed: {e}"
-                                ),
-                            );
-                        } else {
-                            append_log_line(
-                                &watcher_log_path,
-                                "[supervisor] marked carousel failed (bun exited mid-run)",
-                            );
-                        }
-                    }
-                }
-                Ok(None) => {
-                    append_log_line(
-                        &watcher_log_path,
-                        "[supervisor] carousel disappeared from db",
-                    );
-                }
-                Err(e) => append_log_line(
-                    &watcher_log_path,
-                    &format!("[supervisor] get_carousel after exit: {e}"),
-                ),
-            },
-            Err(e) => append_log_line(
-                &watcher_log_path,
-                &format!("[supervisor] open_db after exit: {e}"),
-            ),
-        }
     });
 
     Ok(())
+}
+
+/// Single point of cleanup for the supervisor thread.
+///
+/// Runs unconditionally on every exit path, including the "this can't
+/// happen" branches (mutex poisoning, missing child, try_wait error).
+/// Idempotent: if the carousel is already in a terminal state, this is
+/// a no-op.
+fn finalize_run(
+    app: &tauri::AppHandle,
+    carousel_id: &str,
+    log_path: &Path,
+    proc: &Arc<Mutex<Option<Child>>>,
+    reason: &str,
+) {
+    append_log_line(log_path, &format!("[supervisor] [exit] {reason}"));
+
+    // Drop the Child from the local handle so a fresh run can start.
+    match proc.lock() {
+        Ok(mut guard) => {
+            *guard = None;
+        }
+        Err(e) => {
+            let msg = format!("[supervisor] could not clear proc handle: {e}");
+            eprintln!("{msg}");
+            append_log_line(log_path, &msg);
+        }
+    }
+
+    // Remove from the GenerationProcesses map so a re-run isn't blocked.
+    match app.state::<GenerationProcesses>().0.lock() {
+        Ok(mut map) => {
+            map.remove(carousel_id);
+        }
+        Err(e) => {
+            let msg = format!("[supervisor] could not remove from process map: {e}");
+            eprintln!("{msg}");
+            append_log_line(log_path, &msg);
+        }
+    }
+
+    // ALWAYS check carousel status. If still 'generating', the bun
+    // script didn't get to call set_carousel_run_finished — mark
+    // failed loudly so the UI doesn't sit on a stuck status.
+    let conn = match open_db() {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!(
+                "[supervisor] open_db during finalize failed: {e} \
+                 — carousel status may be stuck"
+            );
+            eprintln!("{msg}");
+            append_log_line(log_path, &msg);
+            return;
+        }
+    };
+    let status = match crate::db::get_carousel(&conn, carousel_id) {
+        Ok(Some(c)) => c.status,
+        Ok(None) => {
+            let msg = "[supervisor] carousel disappeared from db";
+            eprintln!("{msg}");
+            append_log_line(log_path, msg);
+            return;
+        }
+        Err(e) => {
+            let msg = format!("[supervisor] get_carousel during finalize: {e}");
+            eprintln!("{msg}");
+            append_log_line(log_path, &msg);
+            return;
+        }
+    };
+    if status == CarouselStatus::Generating {
+        match crate::db::set_carousel_run_finished(
+            &conn,
+            carousel_id,
+            CarouselStatus::Failed,
+            None,
+        ) {
+            Ok(()) => {
+                append_log_line(
+                    log_path,
+                    "[supervisor] marked carousel failed (status was still 'generating')",
+                );
+            }
+            Err(e) => {
+                let msg = format!(
+                    "[supervisor] FAILED to mark carousel failed: {e} \
+                     — UI will show 'generating' until manually fixed"
+                );
+                eprintln!("{msg}");
+                append_log_line(log_path, &msg);
+            }
+        }
+    } else {
+        append_log_line(
+            log_path,
+            &format!(
+                "[supervisor] carousel already in terminal state '{:?}'",
+                status
+            ),
+        );
+    }
 }
 
 /// Read the last `max_lines` lines of the carousel's `run.log`.

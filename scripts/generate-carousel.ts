@@ -222,19 +222,68 @@ async function driveAgent(opts: {
   let resultMessage:
     | { type: "result"; subtype: string; is_error: boolean }
     | null = null;
+  let messageCount = 0;
+  // Log every SDK message so a stuck agent is visible in run.log instead of
+  // silent. Per CLAUDE.md §conventions/errors: no silent failures.
+  // We don't dump full content (that would flood the log on long thinking
+  // turns); just type + a short discriminator so we can see progress.
   for await (const msg of q) {
-    if (msg.type === "result") {
+    messageCount++;
+    process.stderr.write(
+      `  [sdk:${opts.label}] #${messageCount} ${describeSdkMessage(msg)}\n`,
+    );
+    if ((msg as { type?: string }).type === "result") {
       resultMessage = msg as typeof resultMessage;
     }
   }
+  process.stderr.write(
+    `  [sdk:${opts.label}] stream ended after ${messageCount} message(s)\n`,
+  );
   if (!resultMessage) {
-    throw new Error(`${opts.label} ended without a result message`);
+    throw new Error(
+      `${opts.label} ended without a result message (got ${messageCount} message(s) total)`,
+    );
   }
   if (resultMessage.is_error) {
     throw new Error(
       `${opts.label} errored: ${resultMessage.subtype}`,
     );
   }
+}
+
+/** Compact, log-safe summary of an SDK message for run.log. */
+function describeSdkMessage(msg: unknown): string {
+  if (typeof msg !== "object" || msg === null) return "<non-object>";
+  const m = msg as Record<string, unknown>;
+  const type = String(m.type ?? "<no-type>");
+  // For result messages, surface the subtype so success/error is visible.
+  if (type === "result") {
+    return `result subtype=${String(m.subtype ?? "?")} is_error=${
+      m.is_error ?? false
+    }`;
+  }
+  // For assistant/user messages, surface the content shape.
+  if (type === "assistant" || type === "user") {
+    const content = (m.message as { content?: unknown })?.content;
+    if (Array.isArray(content)) {
+      const blocks = content.map((b) => {
+        if (b && typeof b === "object" && "type" in b) {
+          const bt = String((b as { type: unknown }).type);
+          if (bt === "tool_use") {
+            return `tool_use(${(b as { name?: string }).name ?? "?"})`;
+          }
+          if (bt === "tool_result") {
+            return "tool_result";
+          }
+          return bt;
+        }
+        return "?";
+      });
+      return `${type} blocks=[${blocks.join(",")}]`;
+    }
+    return type;
+  }
+  return type;
 }
 
 async function runImplementer(opts: {
@@ -505,8 +554,34 @@ async function main() {
 }
 
 if (import.meta.main) {
+  // Per CLAUDE.md §conventions/errors: no silent failures. Anything that
+  // would normally exit the bun process without a log line — uncaught
+  // throws, unhandled rejections — gets a loud stderr line first. The
+  // Rust supervisor's pipe-tee will capture it into run.log, and the
+  // exit-watcher will flip the carousel to 'failed'.
+  process.on("uncaughtException", (err) => {
+    process.stderr.write(
+      `[bun-driver] UNCAUGHT EXCEPTION: ${
+        (err as Error)?.stack ?? String(err)
+      }\n`,
+    );
+    process.exit(2);
+  });
+  process.on("unhandledRejection", (reason) => {
+    process.stderr.write(
+      `[bun-driver] UNHANDLED REJECTION: ${
+        (reason as Error)?.stack ?? String(reason)
+      }\n`,
+    );
+    process.exit(3);
+  });
+
   main().catch((err) => {
-    console.error("Fatal:", err);
+    process.stderr.write(
+      `[bun-driver] FATAL in main(): ${
+        (err as Error)?.stack ?? String(err)
+      }\n`,
+    );
     process.exit(1);
   });
 }
