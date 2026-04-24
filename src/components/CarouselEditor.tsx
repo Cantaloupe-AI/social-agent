@@ -68,7 +68,11 @@ export function CarouselEditor({
         setCarouselStatus(c.status);
         setCarouselPdfPath(c.pdf_path);
       })
-      .catch(() => {});
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        console.error("cantalog: getCarousel failed", e);
+        setGenError(`Could not load carousel status: ${String(e)}`);
+      });
     return () => {
       cancelled = true;
     };
@@ -87,8 +91,13 @@ export function CarouselEditor({
           setCarouselPdfPath(c.pdf_path);
         }
         await refresh();
-      } catch {
-        // Best-effort polling — surface errors via genError on user actions only.
+      } catch (e: unknown) {
+        if (cancelled) return;
+        // Polling errors shouldn't block the run, but they shouldn't be
+        // silent either — a wedged Tauri command is the most likely cause
+        // of a frozen UI and the only signal we'd have is the console.
+        console.warn("cantalog: poll tick failed", e);
+        setGenError(`Polling failed: ${String(e)}`);
       }
     };
     void tick();
@@ -385,7 +394,8 @@ function SlideEditor({
         window.setTimeout(() => {
           setSaveStatus((s) => (s === "saved" ? "idle" : s));
         }, 1000);
-      } catch {
+      } catch (e: unknown) {
+        console.error("cantalog: slide save failed", e);
         setSaveStatus("idle");
       }
     }, SAVE_DEBOUNCE_MS);
@@ -420,7 +430,10 @@ function SlideEditor({
                     setSaveStatus((s) => (s === "saved" ? "idle" : s));
                   }, 1000);
                 })
-                .catch(() => setSaveStatus("idle"));
+                .catch((e: unknown) => {
+                  console.error("cantalog: slide save failed (blur)", e);
+                  setSaveStatus("idle");
+                });
             }
           }}
           placeholder="Slide content…"
@@ -464,8 +477,16 @@ function SlideRenderPreview({
         if (cancelled) return;
         setDataUrl(url);
       })
-      .catch(() => {
-        if (!cancelled) setDataUrl(null);
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // Reading a missing or unreadable PNG shouldn't kill the editor,
+        // but the user needs to see why no preview is showing.
+        console.warn(
+          "cantalog: readSlideScreenshotDataUrl failed",
+          { slideId },
+          e,
+        );
+        setDataUrl(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

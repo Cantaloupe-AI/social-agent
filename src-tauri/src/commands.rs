@@ -259,17 +259,42 @@ pub async fn cancel_generation(
     let state = app.state::<GenerationProcesses>();
     let mut map = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(mut child) = map.remove(&carousel_id) {
-        let _ = child.kill();
-        let _ = child.wait();
-        // Best-effort: also flip carousel status to failed so the UI doesn't
-        // hang on 'generating' if the driver never updated it.
-        if let Ok(conn) = open_db() {
-            let _ = crate::db::set_carousel_run_finished(
-                &conn,
-                &carousel_id,
-                crate::types::CarouselStatus::Failed,
-                None,
-            );
+        // kill / wait are best-effort — the child may already be gone,
+        // which is fine. Log if anything else goes wrong so we don't
+        // leave an orphan PID without a trace.
+        if let Err(e) = child.kill() {
+            // ESRCH (already dead) is the boring case; everything else
+            // is worth a line.
+            eprintln!("cantalog: cancel_generation kill: {e}");
+        }
+        if let Err(e) = child.wait() {
+            eprintln!("cantalog: cancel_generation wait: {e}");
+        }
+        // Flip carousel status to failed so the UI doesn't hang on
+        // 'generating' if the driver never got the chance to update it.
+        // A failure here is the user-visible bug; surface it loudly.
+        match open_db() {
+            Ok(conn) => {
+                if let Err(e) = crate::db::set_carousel_run_finished(
+                    &conn,
+                    &carousel_id,
+                    crate::types::CarouselStatus::Failed,
+                    None,
+                ) {
+                    let msg = format!(
+                        "cantalog: cancel_generation set_carousel_run_finished failed: {e}"
+                    );
+                    eprintln!("{msg}");
+                    return Err(msg);
+                }
+            }
+            Err(e) => {
+                let msg = format!(
+                    "cantalog: cancel_generation could not open db to mark failed: {e}"
+                );
+                eprintln!("{msg}");
+                return Err(msg);
+            }
         }
     }
     Ok(())

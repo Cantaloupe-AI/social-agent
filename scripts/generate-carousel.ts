@@ -469,7 +469,16 @@ async function main() {
   const log = (line: string) => {
     const stamped = `[${new Date().toISOString()}] ${line}\n`;
     process.stderr.write(stamped);
-    appendFile(logPath, stamped, "utf8").catch(() => {});
+    appendFile(logPath, stamped, "utf8").catch((e) => {
+      // run.log write failures shouldn't take down the run, but they
+      // must not be silent — without this you'd lose the audit trail
+      // and never know why.
+      process.stderr.write(
+        `[${new Date().toISOString()}] WARN: failed to append to ${logPath}: ${
+          e instanceof Error ? e.message : String(e)
+        }\n`,
+      );
+    });
   };
 
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);

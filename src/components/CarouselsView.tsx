@@ -34,9 +34,12 @@ export function CarouselsView() {
       await create(label);
       setDraftLabel("");
       setComposing(false);
-    } catch {
-      // Error is surfaced via the hook's `error` state; keep the input open so
-      // the user can fix the label (e.g. unique-constraint violation).
+    } catch (e: unknown) {
+      // Error is also surfaced via the hook's `error` state (banner) so the
+      // user sees it; keep the input open so they can fix the label
+      // (e.g. unique-constraint violation). Still log so it shows up in the
+      // devtools console without depending on the banner being noticed.
+      console.error("cantalog: createCarousel failed", e);
     }
   }
 
