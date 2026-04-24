@@ -109,6 +109,13 @@ export async function cancelGeneration(carouselId: string): Promise<void> {
   await call<void>("cancel_generation", { carouselId });
 }
 
+export async function readRunLogTail(
+  carouselId: string,
+  maxLines: number,
+): Promise<string> {
+  return call<string>("read_run_log_tail", { carouselId, maxLines });
+}
+
 export async function openPdf(path: string): Promise<void> {
   await call<void>("open_pdf", { path });
 }

@@ -1,26 +1,23 @@
 #!/usr/bin/env bun
 /**
- * Carousel generation driver — Phase 4 (implementation + manager loop).
+ * Carousel generation driver.
  *
- * Spawned by the Tauri backend with one argument: the carousel id.
- * Reads the cantalog SQLite db directly via bun:sqlite and writes status
- * updates as it goes. The frontend polls the same db to display progress.
+ * Spawned by the Tauri backend as: `bun run scripts/generate-carousel.ts
+ * <carousel_id> <run_dir>`. The backend picks the run dir up front and
+ * persists it to `carousels.run_dir` *before* spawning, so we trust the
+ * path we're given. Stdout/stderr are captured by the parent and tee'd
+ * to `<run_dir>/run.log` — so `log()` here only writes to stderr (the
+ * parent owns the file).
  *
  * Per slide: up to MAX_ITERS rounds of (implementation agent → puppeteer
  * render → manager agent review). Loop exits early on accept; on
- * exhaustion the slide is marked failed. PDF concatenation comes in Phase 5.
+ * exhaustion the slide is marked failed. After all slides accept, all
+ * latest-version PDFs are concatenated into the carousel.pdf.
  */
 
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import {
-  appendFile,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -33,7 +30,6 @@ import { renderSlide } from "./render-slide.ts";
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const DATA_DIR = join(homedir(), "Library", "Application Support", "cantalog");
 const DB_PATH = join(DATA_DIR, "db.sqlite");
-const CAROUSELS_DIR = join(DATA_DIR, "carousels");
 
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
 const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
@@ -85,17 +81,6 @@ function loadSlides(db: Database, carouselId: string): SlideRow[] {
       "SELECT id, carousel_id, order_index, content, status FROM slides WHERE carousel_id = ? ORDER BY order_index ASC",
     )
     .all(carouselId);
-}
-
-function setCarouselRunStarted(db: Database, id: string, runDir: string) {
-  const now = new Date().toISOString();
-  db.run(
-    `UPDATE carousels
-     SET status = 'generating', run_dir = ?, run_started_at = ?, run_finished_at = NULL,
-         pdf_path = NULL, updated_at = ?
-     WHERE id = ?`,
-    [runDir, now, now, id],
-  );
 }
 
 function setCarouselRunFinished(
@@ -212,25 +197,6 @@ function insertSlideFeedback(
      VALUES (?, ?, ?, ?, ?)`,
     [id, slideVersionId, accepted ? 1 : 0, feedback, now],
   );
-}
-
-// ─── Run-dir resolution (no overwriting existing runs) ─────────────────────
-
-async function nextRunDir(slug: string): Promise<string> {
-  const carouselDir = join(CAROUSELS_DIR, slug);
-  await mkdir(carouselDir, { recursive: true });
-  const existing = await readdir(carouselDir);
-  const nums = existing
-    .filter((name) => name.startsWith("run-"))
-    .map((name) => Number.parseInt(name.slice(4), 10))
-    .filter((n) => Number.isFinite(n));
-  const next = (nums.length === 0 ? 0 : Math.max(...nums)) + 1;
-  const dir = join(carouselDir, `run-${next}`);
-  if (existsSync(dir)) {
-    throw new Error(`Run dir already exists: ${dir}`);
-  }
-  await mkdir(dir, { recursive: false });
-  return dir;
 }
 
 // ─── Implementation agent invocation ───────────────────────────────────────
@@ -445,9 +411,15 @@ async function generateSlide(opts: {
 
 async function main() {
   const carouselId = process.argv[2];
-  if (!carouselId) {
-    console.error("Usage: bun run scripts/generate-carousel.ts <carousel_id>");
+  const runDir = process.argv[3];
+  if (!carouselId || !runDir) {
+    console.error(
+      "Usage: bun run scripts/generate-carousel.ts <carousel_id> <run_dir>",
+    );
     process.exit(1);
+  }
+  if (!existsSync(runDir)) {
+    throw new Error(`run_dir does not exist: ${runDir}`);
   }
 
   const db = openDb();
@@ -461,24 +433,10 @@ async function main() {
     throw new Error("Carousel has no slides");
   }
 
-  const runDir = await nextRunDir(carousel.slug);
-  setCarouselRunStarted(db, carouselId, runDir);
-
-  // Append-only run log for debugging.
-  const logPath = join(runDir, "run.log");
+  // The Rust supervisor captures stdout/stderr and writes to run.log;
+  // here we only emit to stderr.
   const log = (line: string) => {
-    const stamped = `[${new Date().toISOString()}] ${line}\n`;
-    process.stderr.write(stamped);
-    appendFile(logPath, stamped, "utf8").catch((e) => {
-      // run.log write failures shouldn't take down the run, but they
-      // must not be silent — without this you'd lose the audit trail
-      // and never know why.
-      process.stderr.write(
-        `[${new Date().toISOString()}] WARN: failed to append to ${logPath}: ${
-          e instanceof Error ? e.message : String(e)
-        }\n`,
-      );
-    });
+    process.stderr.write(`${line}\n`);
   };
 
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);

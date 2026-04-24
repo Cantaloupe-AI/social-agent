@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  ExternalLink,
-  FileDown,
-  Loader2,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowLeft, ExternalLink, FileDown, Plus, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -17,19 +9,24 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSlides } from "@/hooks/useSlides";
 import {
-  cancelGeneration,
   generateCarouselPdf,
   getCarousel,
   openPdf,
   readSlideScreenshotDataUrl,
 } from "@/lib/tauri";
-import type { CarouselStatus, SlideStatus } from "@/lib/types";
+import type { Carousel, SlideStatus } from "@/lib/types";
 
 interface CarouselEditorProps {
   carouselId: string;
   label: string;
   onRename: (nextLabel: string) => Promise<void>;
   onBack: () => void;
+  /**
+   * Called when this carousel has an active or just-started run. The parent
+   * uses this to switch to <GenerationProgressView>. Editor doesn't render
+   * progress UI itself.
+   */
+  onGenerationActive: (carousel: Carousel) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -39,11 +36,11 @@ export function CarouselEditor({
   label,
   onRename,
   onBack,
+  onGenerationActive,
 }: CarouselEditorProps) {
-  const { slides, loading, error, create, updateContent, remove, refresh } =
+  const { slides, loading, error, create, updateContent, remove } =
     useSlides(carouselId);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [carouselStatus, setCarouselStatus] = useState<CarouselStatus>("idle");
   const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -58,15 +55,17 @@ export function CarouselEditor({
     }
   }, [slides, activeId]);
 
-  // Initial fetch of the carousel's stored status (in case a previous run
-  // left it 'done' or 'failed' — we want to reflect that on entry).
+  // On entry: fetch the carousel. If a run is already active (user reopened
+  // the app while the bun driver is still running) hand it straight to the
+  // progress view. Otherwise just remember the pdf_path so the Open PDF
+  // button is correct.
   useEffect(() => {
     let cancelled = false;
     getCarousel(carouselId)
       .then((c) => {
         if (cancelled || !c) return;
-        setCarouselStatus(c.status);
         setCarouselPdfPath(c.pdf_path);
+        if (c.status === "generating") onGenerationActive(c);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -76,37 +75,7 @@ export function CarouselEditor({
     return () => {
       cancelled = true;
     };
-  }, [carouselId]);
-
-  // Poll while generating. Stops when status leaves 'generating'.
-  useEffect(() => {
-    if (carouselStatus !== "generating") return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const c = await getCarousel(carouselId);
-        if (cancelled) return;
-        if (c) {
-          setCarouselStatus(c.status);
-          setCarouselPdfPath(c.pdf_path);
-        }
-        await refresh();
-      } catch (e: unknown) {
-        if (cancelled) return;
-        // Polling errors shouldn't block the run, but they shouldn't be
-        // silent either — a wedged Tauri command is the most likely cause
-        // of a frozen UI and the only signal we'd have is the console.
-        console.warn("cantalog: poll tick failed", e);
-        setGenError(`Polling failed: ${String(e)}`);
-      }
-    };
-    void tick();
-    const id = window.setInterval(() => void tick(), 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [carouselStatus, carouselId, refresh]);
+  }, [carouselId, onGenerationActive]);
 
   async function addSlide() {
     const s = await create();
@@ -121,24 +90,24 @@ export function CarouselEditor({
     }
     try {
       await generateCarouselPdf(carouselId);
-      setCarouselStatus("generating");
-      setCarouselPdfPath(null);
+      // Pull the freshly-updated carousel (Rust just wrote run_dir,
+      // run_started_at, status='generating') and hand it to the progress
+      // view. If get_carousel fails, surface it loudly — the run is still
+      // active in Rust but the UI couldn't switch screens.
+      const c = await getCarousel(carouselId);
+      if (c) {
+        setCarouselPdfPath(c.pdf_path);
+        onGenerationActive(c);
+      } else {
+        setGenError("Generation started, but carousel disappeared from db.");
+      }
     } catch (e: unknown) {
-      setGenError(String(e));
-    }
-  }
-
-  async function stopGeneration() {
-    try {
-      await cancelGeneration(carouselId);
-      setCarouselStatus("failed");
-    } catch (e: unknown) {
+      console.error("cantalog: startGeneration failed", e);
       setGenError(String(e));
     }
   }
 
   const slideCount = slides.length;
-  const isGenerating = carouselStatus === "generating";
 
   return (
     <div className="flex flex-col gap-4">
@@ -153,14 +122,11 @@ export function CarouselEditor({
             initialLabel={label}
             onRename={onRename}
           />
-          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-            <span>
-              {slideCount} {slideCount === 1 ? "slide" : "slides"}
-            </span>
-            <CarouselStatusPill status={carouselStatus} />
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {slideCount} {slideCount === 1 ? "slide" : "slides"}
           </p>
         </div>
-        {carouselPdfPath && !isGenerating && (
+        {carouselPdfPath && (
           <Button
             variant="outline"
             size="sm"
@@ -172,32 +138,16 @@ export function CarouselEditor({
             Open PDF
           </Button>
         )}
-        {isGenerating ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void stopGeneration()}
-          >
-            <X className="size-3.5" />
-            Cancel
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void startGeneration()}
-            disabled={slideCount === 0}
-          >
-            <FileDown className="size-3.5" />
-            Generate PDF
-          </Button>
-        )}
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void addSlide()}
-          disabled={isGenerating}
+          onClick={() => void startGeneration()}
+          disabled={slideCount === 0}
         >
+          <FileDown className="size-3.5" />
+          Generate PDF
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => void addSlide()}>
           <Plus className="size-3.5" />
           New slide
         </Button>
@@ -233,8 +183,7 @@ export function CarouselEditor({
           <TabsList>
             {slides.map((s, i) => (
               <TabsTrigger key={s.id} value={s.id}>
-                <span>Slide {i + 1}</span>
-                <SlideStatusPill status={s.status} />
+                Slide {i + 1}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -525,55 +474,6 @@ function SlideRenderPreview({
         style={{ maxHeight: 540 }}
       />
     </div>
-  );
-}
-
-function CarouselStatusPill({ status }: { status: CarouselStatus }) {
-  if (status === "idle") return null;
-  if (status === "generating") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-900 dark:text-amber-200">
-        <Loader2 className="size-2.5 animate-spin" />
-        generating
-      </span>
-    );
-  }
-  if (status === "done") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 dark:text-emerald-200">
-        done
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-      failed
-    </span>
-  );
-}
-
-function SlideStatusPill({ status }: { status: SlideStatus }) {
-  if (status === "idle") return null;
-  const palette: Record<Exclude<SlideStatus, "idle">, string> = {
-    queued:
-      "bg-muted text-muted-foreground",
-    generating:
-      "bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200",
-    reviewing:
-      "bg-blue-100 dark:bg-blue-900/40 text-blue-900 dark:text-blue-200",
-    accepted:
-      "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200",
-    failed:
-      "bg-destructive/10 text-destructive",
-  };
-  const showSpinner = status === "generating" || status === "reviewing";
-  return (
-    <span
-      className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 text-[9px] font-medium ${palette[status]}`}
-    >
-      {showSpinner && <Loader2 className="size-2 animate-spin" />}
-      {status}
-    </span>
   );
 }
 

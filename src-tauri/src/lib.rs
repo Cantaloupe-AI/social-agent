@@ -28,6 +28,7 @@ pub fn run() {
             commands::list_slide_feedback,
             commands::generate_carousel_pdf,
             commands::cancel_generation,
+            commands::read_run_log_tail,
             commands::open_pdf,
             commands::open_path,
             commands::read_slide_screenshot_data_url,

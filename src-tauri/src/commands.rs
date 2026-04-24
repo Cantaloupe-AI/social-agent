@@ -1,12 +1,16 @@
 use crate::sources::{claude_code, git};
 use crate::types::{
-    Activity, Carousel, Config, Entry, Slide, SlideFeedback, SlideVersion,
+    Activity, Carousel, CarouselStatus, Config, Entry, Slide, SlideFeedback, SlideVersion,
 };
 use chrono::Local;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 use tauri::Manager;
 
 fn open_db() -> Result<rusqlite::Connection, String> {
@@ -137,9 +141,17 @@ pub async fn list_slide_feedback(
     crate::db::list_slide_feedback(&conn, &slide_version_id).map_err(|e| e.to_string())
 }
 
-/// Tracks one bun driver subprocess per carousel id so we can cancel it later.
+/// Per-carousel handle to the bun driver subprocess.
+///
+/// The watcher thread polls `try_wait()` under the same lock that
+/// `cancel_generation` uses to call `kill()` — so a cancel raced against
+/// a natural exit is harmless: whoever wins the lock sees the truth.
+pub struct ProcHandle {
+    pub inner: Arc<Mutex<Option<Child>>>,
+}
+
 #[derive(Default)]
-pub struct GenerationProcesses(pub Mutex<HashMap<String, Child>>);
+pub struct GenerationProcesses(pub Mutex<HashMap<String, ProcHandle>>);
 
 fn repo_root() -> Result<PathBuf, String> {
     // CARGO_MANIFEST_DIR is /…/social-agent/src-tauri at build time.
@@ -150,52 +162,359 @@ fn repo_root() -> Result<PathBuf, String> {
         .ok_or_else(|| "could not resolve repo root from CARGO_MANIFEST_DIR".to_string())
 }
 
+/// Pick the next `run-N` directory under `<base>/carousels/<slug>/`.
+///
+/// We scan the existing entries, take the max numeric suffix, add 1, and
+/// `create_dir` (atomic — fails if it already exists). This is the only
+/// place run-dir naming happens; the bun script just trusts the path it's
+/// given.
+fn next_run_dir(slug: &str) -> Result<PathBuf, String> {
+    let base_dir = crate::config::default_base_dir().map_err(|e| e.to_string())?;
+    let carousel_dir = crate::config::carousels_dir(&base_dir).join(slug);
+    std::fs::create_dir_all(&carousel_dir)
+        .map_err(|e| format!("creating {}: {e}", carousel_dir.display()))?;
+
+    let mut max = 0u32;
+    for entry in std::fs::read_dir(&carousel_dir)
+        .map_err(|e| format!("reading {}: {e}", carousel_dir.display()))?
+    {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let Some(s) = name.to_str() else { continue };
+        if let Some(rest) = s.strip_prefix("run-") {
+            if let Ok(n) = rest.parse::<u32>() {
+                if n > max {
+                    max = n;
+                }
+            }
+        }
+    }
+    let next = max + 1;
+    let dir = carousel_dir.join(format!("run-{next}"));
+    std::fs::create_dir(&dir).map_err(|e| {
+        format!(
+            "creating run dir {}: {e} (race with another driver?)",
+            dir.display()
+        )
+    })?;
+    Ok(dir)
+}
+
+/// Tee a child pipe into both `run.log` and the parent's stderr,
+/// line-by-line, prefixing each line so the source is unambiguous.
+///
+/// Returning early on a read error is fine — the child has either exited
+/// or its pipe has gone away; the watcher thread will pick that up.
+fn spawn_pipe_tee(
+    label: &'static str,
+    pipe: impl std::io::Read + Send + 'static,
+    log_path: PathBuf,
+) {
+    thread::spawn(move || {
+        let reader = BufReader::new(pipe);
+        for line_res in reader.lines() {
+            let line = match line_res {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("cantalog: pipe-tee[{label}] read error: {e}");
+                    return;
+                }
+            };
+            let stamped = format!(
+                "[{}] [{}] {}\n",
+                chrono::Utc::now().to_rfc3339(),
+                label,
+                line
+            );
+            // Always echo to parent stderr so `tauri dev` shows it inline.
+            eprint!("{stamped}");
+            // And append to the run.log file for the UI to read.
+            match OpenOptions::new().create(true).append(true).open(&log_path) {
+                Ok(mut f) => {
+                    if let Err(e) = f.write_all(stamped.as_bytes()) {
+                        eprintln!(
+                            "cantalog: pipe-tee[{label}] log write failed ({}): {e}",
+                            log_path.display()
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "cantalog: pipe-tee[{label}] log open failed ({}): {e}",
+                        log_path.display()
+                    );
+                }
+            }
+        }
+    });
+}
+
+/// Append a freshly-stamped line to `run.log`. Used by the supervisor
+/// thread to record `[exit]` lines that didn't come through a pipe.
+fn append_log_line(log_path: &Path, line: &str) {
+    let stamped = format!("[{}] {}\n", chrono::Utc::now().to_rfc3339(), line);
+    eprint!("{stamped}");
+    match OpenOptions::new().create(true).append(true).open(log_path) {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(stamped.as_bytes()) {
+                eprintln!(
+                    "cantalog: append_log_line failed ({}): {e}",
+                    log_path.display()
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "cantalog: append_log_line open failed ({}): {e}",
+                log_path.display()
+            );
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn generate_carousel_pdf(
     app: tauri::AppHandle,
     carousel_id: String,
 ) -> Result<(), String> {
-    // Refuse if already running.
+    // 1. Refuse if a run is already in flight for this carousel.
     {
         let state = app.state::<GenerationProcesses>();
         let mut map = state.0.lock().map_err(|e| e.to_string())?;
-        if let Some(child) = map.get_mut(&carousel_id) {
-            // Reap if it has already exited.
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    map.remove(&carousel_id);
-                }
-                Ok(None) => {
-                    return Err("Generation is already running for this carousel".into());
-                }
-                Err(e) => return Err(format!("checking child status: {e}")),
+        if let Some(handle) = map.get(&carousel_id) {
+            let inner = handle.inner.lock().map_err(|e| e.to_string())?;
+            if inner.is_some() {
+                return Err("Generation is already running for this carousel".into());
             }
+            // Stale entry from a previous run that finished; drop it.
+            drop(inner);
+            map.remove(&carousel_id);
         }
     }
 
+    // 2. Sanity-check inputs and pick the run dir up front.
     let root = repo_root()?;
     let script = root.join("scripts").join("generate-carousel.ts");
     if !script.exists() {
-        return Err(format!(
-            "driver script not found at {}",
-            script.display()
-        ));
+        return Err(format!("driver script not found at {}", script.display()));
     }
 
-    let child = Command::new("bun")
+    let conn = open_db()?;
+    let carousel = crate::db::get_carousel(&conn, &carousel_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("carousel {carousel_id} not found"))?;
+    let slug = carousel
+        .slug
+        .clone()
+        .ok_or_else(|| format!("carousel {carousel_id} has no slug — reopen the app once"))?;
+    let slides = crate::db::list_slides(&conn, &carousel_id).map_err(|e| e.to_string())?;
+    if slides.is_empty() {
+        return Err("Carousel has no slides".into());
+    }
+    drop(conn);
+
+    let run_dir = next_run_dir(&slug)?;
+    let log_path = run_dir.join("run.log");
+    append_log_line(
+        &log_path,
+        &format!(
+            "[supervisor] starting bun driver for carousel \"{}\" ({} slide(s))",
+            carousel.label,
+            slides.len()
+        ),
+    );
+
+    // Persist run start so the UI can find run.log immediately, even if bun
+    // crashes before its first DB write.
+    {
+        let conn = open_db()?;
+        crate::db::set_carousel_run_started(
+            &conn,
+            &carousel_id,
+            run_dir.to_string_lossy().as_ref(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    // 3. Spawn bun. Rust now owns the run-dir picker; bun just trusts the
+    // path passed as argv[2].
+    let mut child = Command::new("bun")
         .arg("run")
         .arg(&script)
         .arg(&carousel_id)
+        .arg(&run_dir)
         .current_dir(&root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawning bun driver: {e}"))?;
+        .map_err(|e| {
+            // Mark the carousel failed so the UI doesn't sit on 'generating'.
+            if let Ok(conn) = open_db() {
+                let _ = crate::db::set_carousel_run_finished(
+                    &conn,
+                    &carousel_id,
+                    CarouselStatus::Failed,
+                    None,
+                );
+            }
+            append_log_line(
+                &log_path,
+                &format!("[supervisor] spawn failed: {e}"),
+            );
+            format!("spawning bun driver: {e}")
+        })?;
 
-    let state = app.state::<GenerationProcesses>();
-    let mut map = state.0.lock().map_err(|e| e.to_string())?;
-    map.insert(carousel_id, child);
+    // 4. Drain stdout + stderr into run.log (and into our own stderr).
+    if let Some(stdout) = child.stdout.take() {
+        spawn_pipe_tee("bun-stdout", stdout, log_path.clone());
+    }
+    if let Some(stderr) = child.stderr.take() {
+        spawn_pipe_tee("bun-stderr", stderr, log_path.clone());
+    }
+
+    // 5. Park the child in the GenerationProcesses map and start the watcher.
+    let proc = Arc::new(Mutex::new(Some(child)));
+    {
+        let state = app.state::<GenerationProcesses>();
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        map.insert(
+            carousel_id.clone(),
+            ProcHandle {
+                inner: proc.clone(),
+            },
+        );
+    }
+
+    let app_handle = app.clone();
+    let watcher_carousel_id = carousel_id.clone();
+    let watcher_log_path = log_path.clone();
+    let watcher_proc = proc.clone();
+    thread::spawn(move || {
+        // Poll try_wait under the same lock cancel_generation uses for kill().
+        // The 150 ms cadence keeps cancel responsive without burning CPU.
+        let status = loop {
+            thread::sleep(Duration::from_millis(150));
+            let mut guard = match watcher_proc.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    append_log_line(
+                        &watcher_log_path,
+                        &format!("[supervisor] mutex poisoned: {e}"),
+                    );
+                    return;
+                }
+            };
+            let child = match guard.as_mut() {
+                Some(c) => c,
+                None => return, // somebody else already reaped — shouldn't happen
+            };
+            match child.try_wait() {
+                Ok(Some(s)) => break s,
+                Ok(None) => continue,
+                Err(e) => {
+                    append_log_line(
+                        &watcher_log_path,
+                        &format!("[supervisor] try_wait error: {e}"),
+                    );
+                    return;
+                }
+            }
+        };
+
+        append_log_line(
+            &watcher_log_path,
+            &format!("[supervisor] [exit] bun driver exited with {status}"),
+        );
+
+        // Drop the Child from the map so a new run can start.
+        if let Ok(mut guard) = watcher_proc.lock() {
+            *guard = None;
+        }
+        if let Some(state) = Some(app_handle.state::<GenerationProcesses>()) {
+            if let Ok(mut map) = state.0.lock() {
+                map.remove(&watcher_carousel_id);
+            }
+        }
+
+        // If the carousel is still 'generating', the bun script never got to
+        // call set_carousel_run_finished (crash, kill, hard error). Mark it
+        // failed loudly so the UI doesn't hang.
+        match open_db() {
+            Ok(conn) => match crate::db::get_carousel(&conn, &watcher_carousel_id) {
+                Ok(Some(c)) => {
+                    if c.status == CarouselStatus::Generating {
+                        if let Err(e) = crate::db::set_carousel_run_finished(
+                            &conn,
+                            &watcher_carousel_id,
+                            CarouselStatus::Failed,
+                            None,
+                        ) {
+                            append_log_line(
+                                &watcher_log_path,
+                                &format!(
+                                    "[supervisor] failed to mark carousel failed: {e}"
+                                ),
+                            );
+                        } else {
+                            append_log_line(
+                                &watcher_log_path,
+                                "[supervisor] marked carousel failed (bun exited mid-run)",
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    append_log_line(
+                        &watcher_log_path,
+                        "[supervisor] carousel disappeared from db",
+                    );
+                }
+                Err(e) => append_log_line(
+                    &watcher_log_path,
+                    &format!("[supervisor] get_carousel after exit: {e}"),
+                ),
+            },
+            Err(e) => append_log_line(
+                &watcher_log_path,
+                &format!("[supervisor] open_db after exit: {e}"),
+            ),
+        }
+    });
+
     Ok(())
+}
+
+/// Read the last `max_lines` lines of the carousel's `run.log`.
+///
+/// Returns an empty string if the carousel has no `run_dir` yet (no run
+/// has started) or the file is missing.
+#[tauri::command]
+pub async fn read_run_log_tail(
+    carousel_id: String,
+    max_lines: usize,
+) -> Result<String, String> {
+    let conn = open_db()?;
+    let carousel = match crate::db::get_carousel(&conn, &carousel_id)
+        .map_err(|e| e.to_string())?
+    {
+        Some(c) => c,
+        None => return Err(format!("carousel {carousel_id} not found")),
+    };
+    let Some(run_dir) = carousel.run_dir else {
+        return Ok(String::new());
+    };
+    let log_path = PathBuf::from(run_dir).join("run.log");
+    if !log_path.exists() {
+        return Ok(String::new());
+    }
+    let contents = std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("reading {}: {e}", log_path.display()))?;
+    if max_lines == 0 {
+        return Ok(contents);
+    }
+    let lines: Vec<&str> = contents.lines().collect();
+    let start = lines.len().saturating_sub(max_lines);
+    Ok(lines[start..].join("\n"))
 }
 
 #[tauri::command]
@@ -256,46 +575,42 @@ pub async fn cancel_generation(
     app: tauri::AppHandle,
     carousel_id: String,
 ) -> Result<(), String> {
+    // Look up the process handle without removing it — the watcher thread
+    // owns the lifecycle and will reap on next try_wait().
     let state = app.state::<GenerationProcesses>();
-    let mut map = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = map.remove(&carousel_id) {
-        // kill / wait are best-effort — the child may already be gone,
-        // which is fine. Log if anything else goes wrong so we don't
-        // leave an orphan PID without a trace.
+    let map = state.0.lock().map_err(|e| e.to_string())?;
+    let Some(handle) = map.get(&carousel_id) else {
+        // No active run; nothing to do beyond defensively flipping status.
+        drop(map);
+        if let Ok(conn) = open_db() {
+            if let Err(e) = crate::db::set_carousel_run_finished(
+                &conn,
+                &carousel_id,
+                CarouselStatus::Failed,
+                None,
+            ) {
+                eprintln!(
+                    "cantalog: cancel_generation defensive set_run_finished failed: {e}"
+                );
+            }
+        }
+        return Ok(());
+    };
+    let inner = handle.inner.clone();
+    drop(map);
+
+    // Send SIGKILL via Child::kill while we hold the inner lock.
+    let mut guard = inner.lock().map_err(|e| e.to_string())?;
+    if let Some(child) = guard.as_mut() {
         if let Err(e) = child.kill() {
-            // ESRCH (already dead) is the boring case; everything else
-            // is worth a line.
+            // ESRCH (already exited) is harmless; anything else is worth a line
+            // but don't fail the cancel — the watcher will still reap.
             eprintln!("cantalog: cancel_generation kill: {e}");
         }
-        if let Err(e) = child.wait() {
-            eprintln!("cantalog: cancel_generation wait: {e}");
-        }
-        // Flip carousel status to failed so the UI doesn't hang on
-        // 'generating' if the driver never got the chance to update it.
-        // A failure here is the user-visible bug; surface it loudly.
-        match open_db() {
-            Ok(conn) => {
-                if let Err(e) = crate::db::set_carousel_run_finished(
-                    &conn,
-                    &carousel_id,
-                    crate::types::CarouselStatus::Failed,
-                    None,
-                ) {
-                    let msg = format!(
-                        "cantalog: cancel_generation set_carousel_run_finished failed: {e}"
-                    );
-                    eprintln!("{msg}");
-                    return Err(msg);
-                }
-            }
-            Err(e) => {
-                let msg = format!(
-                    "cantalog: cancel_generation could not open db to mark failed: {e}"
-                );
-                eprintln!("{msg}");
-                return Err(msg);
-            }
-        }
     }
+    drop(guard);
+
+    // The watcher thread will detect the exit on its next poll and flip
+    // status to 'failed'. We don't have to wait for that here.
     Ok(())
 }

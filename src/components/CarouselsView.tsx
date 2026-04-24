@@ -2,14 +2,31 @@ import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 
 import { CarouselEditor } from "@/components/CarouselEditor";
+import { GenerationProgressView } from "@/components/GenerationProgressView";
 import { Button } from "@/components/ui/button";
 import { useCarousels } from "@/hooks/useCarousels";
+import type { Carousel } from "@/lib/types";
 
 export function CarouselsView() {
   const { carousels, loading, error, create, rename, remove } = useCarousels();
   const [editingId, setEditingId] = useState<string | null>(null);
+  // When set, takes over the screen with the run-progress view. We keep
+  // editingId set behind it so closing the progress view returns to the
+  // editor, not the list.
+  const [progressCarousel, setProgressCarousel] = useState<Carousel | null>(
+    null,
+  );
   const [composing, setComposing] = useState(false);
   const [draftLabel, setDraftLabel] = useState("");
+
+  if (progressCarousel) {
+    return (
+      <GenerationProgressView
+        carousel={progressCarousel}
+        onClose={() => setProgressCarousel(null)}
+      />
+    );
+  }
 
   if (editingId) {
     const editing = carousels.find((c) => c.id === editingId);
@@ -19,6 +36,7 @@ export function CarouselsView() {
         label={editing?.label ?? ""}
         onRename={(next) => rename(editingId, next)}
         onBack={() => setEditingId(null)}
+        onGenerationActive={setProgressCarousel}
       />
     );
   }
