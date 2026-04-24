@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Plate II — The Problem</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bone: #e8ebe2;
+        --ink: #0b140f;
+        --ink-dim: #525b55;
+        --primary: #055031;
+        --warning: #fba100;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        width: 1080px;
+        height: 1350px;
+        background: var(--bone);
+        color: var(--ink);
+        font-family: "Inter", system-ui, sans-serif;
+        font-feature-settings: "ss01", "cv11";
+        overflow: hidden;
+        position: relative;
+      }
+
+      /* ─── Header rule + tag + folio ────────────────────────────── */
+      .rule-top {
+        position: absolute;
+        left: 96px;
+        right: 96px;
+        top: 56px;
+        height: 1px;
+        background: var(--ink);
+      }
+      .tag {
+        position: absolute;
+        top: 96px;
+        left: 96px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.38em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+      .folio {
+        position: absolute;
+        top: 96px;
+        right: 96px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.38em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+
+      /* ─── Decorative shape: bar-left (warning amber) ─────────── */
+      .shape-bar-left {
+        position: absolute;
+        left: 0;
+        top: 200px;
+        width: 180px;
+        height: 360px;
+        background: var(--warning);
+      }
+
+      /* ─── Headline ────────────────────────────────────────────── */
+      .headline {
+        position: absolute;
+        left: 240px;
+        top: 360px;
+        width: 820px;
+        margin: 0;
+        font-size: 104px;
+        line-height: 1.05;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        color: var(--ink);
+      }
+      .accent {
+        color: var(--primary);
+      }
+
+      /* ─── Body copy ───────────────────────────────────────────── */
+      .body {
+        position: absolute;
+        left: 240px;
+        top: 720px;
+        width: 620px;
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.55;
+        font-weight: 400;
+        color: var(--ink);
+      }
+      .body em {
+        font-style: italic;
+      }
+      .body code {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 18px;
+        color: var(--primary);
+        border-bottom: 1px solid var(--primary);
+      }
+
+      /* ─── Caption (italic, ink-dim) ───────────────────────────── */
+      .caption {
+        position: absolute;
+        left: 240px;
+        top: 944px;
+        width: 520px;
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.5;
+        font-style: italic;
+        color: var(--ink-dim);
+      }
+
+      /* ─── Footer rule + colophon ──────────────────────────────── */
+      .rule-bottom {
+        position: absolute;
+        left: 96px;
+        right: 96px;
+        top: 1294px;
+        height: 1px;
+        background: var(--ink);
+      }
+      .colophon-left {
+        position: absolute;
+        left: 96px;
+        top: 1316px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+      .colophon-right {
+        position: absolute;
+        right: 96px;
+        top: 1316px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="rule-top"></div>
+    <div class="tag">Plate&nbsp;II · The Problem</div>
+    <div class="folio">II / V</div>
+
+    <div class="shape-bar-left" aria-hidden="true"></div>
+
+    <h1 class="headline">
+      Prose is a<br />
+      <span class="accent">lossy</span> format.
+    </h1>
+
+    <p class="body">
+      The reader is a machine. <em>Ambiguity</em> is expensive when the
+      downstream is a parser, not a person. Numbers should be
+      <code>numbers</code>, not adjectives.
+    </p>
+
+    <p class="caption">
+      Ambiguity is the cost of elegance when the reader is a machine.
+    </p>
+
+    <div class="rule-bottom"></div>
+    <div class="colophon-left">Manifests for Agents</div>
+    <div class="colophon-right">Josh · Cantaloupe AI</div>
+  </body>
+</html>
