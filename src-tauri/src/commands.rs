@@ -199,6 +199,19 @@ pub async fn generate_carousel_pdf(
 }
 
 #[tauri::command]
+pub async fn open_pdf(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("PDF not found: {path}"));
+    }
+    Command::new("open")
+        .arg(p)
+        .spawn()
+        .map_err(|e| format!("opening pdf: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn cancel_generation(
     app: tauri::AppHandle,
     carousel_id: String,

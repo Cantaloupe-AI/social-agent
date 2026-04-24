@@ -25,6 +25,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { PDFDocument } from "pdf-lib";
 import { renderSlide } from "./render-slide.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -101,14 +102,53 @@ function setCarouselRunFinished(
   db: Database,
   id: string,
   status: "done" | "failed",
+  pdfPath: string | null,
 ) {
   const now = new Date().toISOString();
   db.run(
     `UPDATE carousels
-     SET status = ?, run_finished_at = ?, updated_at = ?
+     SET status = ?, run_finished_at = ?, pdf_path = ?, updated_at = ?
      WHERE id = ?`,
-    [status, now, now, id],
+    [status, now, pdfPath, now, id],
   );
+}
+
+interface LatestPdf {
+  slideId: string;
+  pdfPath: string;
+}
+
+function loadLatestSlidePdfs(
+  db: Database,
+  slideIds: string[],
+): LatestPdf[] {
+  const out: LatestPdf[] = [];
+  for (const slideId of slideIds) {
+    const row = db
+      .query<{ pdf_path: string | null }, [string]>(
+        `SELECT pdf_path FROM slide_versions
+         WHERE slide_id = ?
+         ORDER BY version_number DESC LIMIT 1`,
+      )
+      .get(slideId);
+    if (!row || !row.pdf_path) {
+      throw new Error(`Slide ${slideId} has no rendered PDF`);
+    }
+    out.push({ slideId, pdfPath: row.pdf_path });
+  }
+  return out;
+}
+
+async function concatPdfs(inputs: string[], outputPath: string): Promise<void> {
+  const merged = await PDFDocument.create();
+  for (const input of inputs) {
+    const bytes = await readFile(input);
+    const src = await PDFDocument.load(bytes);
+    const pages = await merged.copyPages(src, src.getPageIndices());
+    for (const page of pages) merged.addPage(page);
+  }
+  const out = await merged.save();
+  await writeFile(outputPath, out);
 }
 
 function setSlideStatus(
@@ -463,7 +503,33 @@ async function main() {
     }
   }
 
-  setCarouselRunFinished(db, carouselId, allOk ? "done" : "failed");
+  let finalPdfPath: string | null = null;
+  if (allOk) {
+    try {
+      const slug = carousel.slug;
+      const runNumber = runDir.split("/run-").pop() ?? "1";
+      finalPdfPath = join(runDir, `${slug}-v${runNumber}.pdf`);
+      const inputs = loadLatestSlidePdfs(
+        db,
+        slides.map((s) => s.id),
+      ).map((x) => x.pdfPath);
+      log(`Concatenating ${inputs.length} slide PDFs → ${finalPdfPath}`);
+      await concatPdfs(inputs, finalPdfPath);
+      log(`✓ carousel.pdf written`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ concat failed: ${msg}`);
+      allOk = false;
+      finalPdfPath = null;
+    }
+  }
+
+  setCarouselRunFinished(
+    db,
+    carouselId,
+    allOk ? "done" : "failed",
+    finalPdfPath,
+  );
   log(allOk ? "✓ run complete" : "✗ run finished with failures");
   db.close();
 

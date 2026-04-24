@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, FileDown, Loader2, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ExternalLink,
+  FileDown,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -12,6 +20,7 @@ import {
   cancelGeneration,
   generateCarouselPdf,
   getCarousel,
+  openPdf,
 } from "@/lib/tauri";
 import type { CarouselStatus, SlideStatus } from "@/lib/types";
 
@@ -34,6 +43,7 @@ export function CarouselEditor({
     useSlides(carouselId);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [carouselStatus, setCarouselStatus] = useState<CarouselStatus>("idle");
+  const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
   // Keep a valid active tab as slides change.
@@ -53,7 +63,9 @@ export function CarouselEditor({
     let cancelled = false;
     getCarousel(carouselId)
       .then((c) => {
-        if (!cancelled && c) setCarouselStatus(c.status);
+        if (cancelled || !c) return;
+        setCarouselStatus(c.status);
+        setCarouselPdfPath(c.pdf_path);
       })
       .catch(() => {});
     return () => {
@@ -69,7 +81,10 @@ export function CarouselEditor({
       try {
         const c = await getCarousel(carouselId);
         if (cancelled) return;
-        if (c) setCarouselStatus(c.status);
+        if (c) {
+          setCarouselStatus(c.status);
+          setCarouselPdfPath(c.pdf_path);
+        }
         await refresh();
       } catch {
         // Best-effort polling — surface errors via genError on user actions only.
@@ -97,6 +112,7 @@ export function CarouselEditor({
     try {
       await generateCarouselPdf(carouselId);
       setCarouselStatus("generating");
+      setCarouselPdfPath(null);
     } catch (e: unknown) {
       setGenError(String(e));
     }
@@ -134,6 +150,18 @@ export function CarouselEditor({
             <CarouselStatusPill status={carouselStatus} />
           </p>
         </div>
+        {carouselPdfPath && !isGenerating && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (carouselPdfPath) void openPdf(carouselPdfPath);
+            }}
+          >
+            <ExternalLink className="size-3.5" />
+            Open PDF
+          </Button>
+        )}
         {isGenerating ? (
           <Button
             variant="outline"

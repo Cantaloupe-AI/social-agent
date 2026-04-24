@@ -108,3 +108,7 @@ export async function generateCarouselPdf(carouselId: string): Promise<void> {
 export async function cancelGeneration(carouselId: string): Promise<void> {
   await call<void>("cancel_generation", { carouselId });
 }
+
+export async function openPdf(path: string): Promise<void> {
+  await call<void>("open_pdf", { path });
+}
