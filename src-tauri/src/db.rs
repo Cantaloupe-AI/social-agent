@@ -404,6 +404,28 @@ pub fn set_carousel_run_started(
     Ok(())
 }
 
+/// Reset every slide in a carousel to `queued` with no `last_error`.
+///
+/// Called at run-start so the progress UI doesn't show stale per-slide
+/// statuses from a previous run (e.g. a slide that was accepted last time
+/// would otherwise stay ✓ accepted while the new run's driver hasn't
+/// reached it yet).
+pub fn reset_slides_for_run(conn: &Connection, carousel_id: &str) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE slides
+        SET status = 'queued',
+            last_error = NULL,
+            updated_at = ?2
+        WHERE carousel_id = ?1
+        "#,
+        params![carousel_id, now],
+    )
+    .context("resetting slides for run")?;
+    Ok(())
+}
+
 pub fn set_carousel_run_finished(
     conn: &Connection,
     id: &str,

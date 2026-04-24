@@ -325,7 +325,9 @@ pub async fn generate_carousel_pdf(
     );
 
     // Persist run start so the UI can find run.log immediately, even if bun
-    // crashes before its first DB write.
+    // crashes before its first DB write. Also reset every slide's status to
+    // 'queued' so the progress UI doesn't show stale ✓/✗ from a prior run
+    // for slides the new driver hasn't reached yet.
     {
         let conn = open_db()?;
         crate::db::set_carousel_run_started(
@@ -334,6 +336,8 @@ pub async fn generate_carousel_pdf(
             run_dir.to_string_lossy().as_ref(),
         )
         .map_err(|e| e.to_string())?;
+        crate::db::reset_slides_for_run(&conn, &carousel_id)
+            .map_err(|e| e.to_string())?;
     }
 
     // 3. Spawn bun. Rust now owns the run-dir picker; bun just trusts the
