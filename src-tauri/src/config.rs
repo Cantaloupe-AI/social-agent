@@ -11,6 +11,10 @@ pub fn default_base_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
+pub fn carousels_dir(base_dir: &Path) -> PathBuf {
+    base_dir.join("carousels")
+}
+
 pub fn default_config() -> Config {
     let projects_dir = dirs::home_dir()
         .map(|h| h.join(".claude/projects"))
@@ -18,6 +22,7 @@ pub fn default_config() -> Config {
     Config {
         git: GitConfig::default(),
         claude_code: ClaudeCodeConfig { projects_dir },
+        chrome_path: None,
     }
 }
 
