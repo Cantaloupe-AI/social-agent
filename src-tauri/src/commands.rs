@@ -212,6 +212,46 @@ pub async fn open_pdf(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn open_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err(format!("Path not found: {path}"));
+    }
+    Command::new("open")
+        .arg(p)
+        .spawn()
+        .map_err(|e| format!("opening path: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn read_slide_screenshot_data_url(
+    slide_id: String,
+) -> Result<Option<String>, String> {
+    let conn = open_db()?;
+    let latest = crate::db::get_latest_slide_version(&conn, &slide_id)
+        .map_err(|e| e.to_string())?;
+    let Some(version) = latest else { return Ok(None) };
+    let Some(path) = version.screenshot_path else { return Ok(None) };
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("reading screenshot {path}: {e}"))?;
+    use base64::Engine as _;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(Some(format!("data:image/png;base64,{encoded}")))
+}
+
+#[tauri::command]
+pub async fn read_slide_html(slide_id: String) -> Result<Option<String>, String> {
+    let conn = open_db()?;
+    let latest = crate::db::get_latest_slide_version(&conn, &slide_id)
+        .map_err(|e| e.to_string())?;
+    let Some(version) = latest else { return Ok(None) };
+    let html = std::fs::read_to_string(&version.html_path)
+        .map_err(|e| format!("reading html {}: {e}", version.html_path))?;
+    Ok(Some(html))
+}
+
+#[tauri::command]
 pub async fn cancel_generation(
     app: tauri::AppHandle,
     carousel_id: String,

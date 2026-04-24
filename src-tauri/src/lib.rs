@@ -29,6 +29,9 @@ pub fn run() {
             commands::generate_carousel_pdf,
             commands::cancel_generation,
             commands::open_pdf,
+            commands::open_path,
+            commands::read_slide_screenshot_data_url,
+            commands::read_slide_html,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

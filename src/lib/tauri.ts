@@ -112,3 +112,17 @@ export async function cancelGeneration(carouselId: string): Promise<void> {
 export async function openPdf(path: string): Promise<void> {
   await call<void>("open_pdf", { path });
 }
+
+export async function openPath(path: string): Promise<void> {
+  await call<void>("open_path", { path });
+}
+
+export async function readSlideScreenshotDataUrl(
+  slideId: string,
+): Promise<string | null> {
+  return call<string | null>("read_slide_screenshot_data_url", { slideId });
+}
+
+export async function readSlideHtml(slideId: string): Promise<string | null> {
+  return call<string | null>("read_slide_html", { slideId });
+}

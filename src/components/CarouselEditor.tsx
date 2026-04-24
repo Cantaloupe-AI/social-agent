@@ -21,6 +21,7 @@ import {
   generateCarouselPdf,
   getCarousel,
   openPdf,
+  readSlideScreenshotDataUrl,
 } from "@/lib/tauri";
 import type { CarouselStatus, SlideStatus } from "@/lib/types";
 
@@ -241,6 +242,7 @@ export function CarouselEditor({
                   }
                 }}
               />
+              <SlideRenderPreview slideId={s.id} status={s.status} />
             </TabsContent>
           ))}
         </Tabs>
@@ -438,6 +440,69 @@ function SlideEditor({
           Delete slide
         </Button>
       </div>
+    </div>
+  );
+}
+
+function SlideRenderPreview({
+  slideId,
+  status,
+}: {
+  slideId: string;
+  status: SlideStatus;
+}) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Re-fetch whenever the slide id or status changes — status transitions
+  // (idle → generating → reviewing → accepted) signal new versions to render.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    readSlideScreenshotDataUrl(slideId)
+      .then((url) => {
+        if (cancelled) return;
+        setDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setDataUrl(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slideId, status]);
+
+  if (loading && !dataUrl) {
+    return (
+      <div className="mt-3 rounded-md border border-input bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
+        Loading preview…
+      </div>
+    );
+  }
+
+  if (!dataUrl) {
+    return (
+      <div className="mt-3 rounded-md border border-dashed border-input bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
+        No render yet — click Generate PDF to create one.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-input bg-muted/30 p-3">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
+        Latest render
+      </div>
+      {/* Slide is 1080×1350 — display at ~25% so the whole page fits in the editor pane. */}
+      <img
+        src={dataUrl}
+        alt={`Slide ${slideId} render`}
+        className="block max-w-full h-auto rounded border border-border/50"
+        style={{ maxHeight: 540 }}
+      />
     </div>
   );
 }
