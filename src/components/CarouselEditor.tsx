@@ -4,6 +4,7 @@ import {
   Check,
   ExternalLink,
   FileDown,
+  GripVertical,
   Pencil,
   Plus,
   Trash2,
@@ -62,42 +63,135 @@ export function CarouselEditor({
   // When non-null, that slide's tab is showing an inline title-edit input
   // instead of the title + pencil affordance.
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
-  // Drag-to-reorder state. We only commit the new order on drop; while
-  // dragging this only drives visual indicators.
+  // Drag-to-reorder state. WKWebView's HTML5 drag-and-drop doesn't
+  // reliably fire dragover for in-page drop targets, so we implement
+  // drag with pointer events instead — initiated by an explicit grip
+  // handle on each tab. We only commit the new order on pointer-up;
+  // while dragging this state only drives visual indicators.
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     id: string;
     position: "before" | "after";
   } | null>(null);
-  // Debug-only: last dragover signal regardless of whether we acted on it.
-  // If this updates while `dropTarget` stays null, you know dragover is
-  // firing fine and the early-return path (over the source) is the cause.
+  // Debug-only: last hover signal regardless of whether we acted on it.
   const [lastDragoverDebug, setLastDragoverDebug] = useState<{
     targetId: string;
     position: "before" | "after";
     count: number;
   } | null>(null);
+  const slidesRef = useRef(slides);
+  // Keep latest `slides` reachable from the document-level pointer
+  // handlers (which capture state at pointerdown time) without forcing
+  // the listener-attach effect to re-run on every slide change.
+  slidesRef.current = slides;
+  const draggingIdRef = useRef<string | null>(null);
+  draggingIdRef.current = draggingId;
 
-  function handleDrop(targetId: string, position: "before" | "after") {
-    setDraggingId(null);
-    setDropTarget(null);
-    if (!draggingId || draggingId === targetId) return;
-    const ids = slides.map((s) => s.id);
-    const fromIdx = ids.indexOf(draggingId);
+  function commitDrop(targetId: string, position: "before" | "after") {
+    const sourceId = draggingIdRef.current;
+    if (!sourceId || sourceId === targetId) return;
+    const ids = slidesRef.current.map((s) => s.id);
+    const fromIdx = ids.indexOf(sourceId);
     const targetIdx = ids.indexOf(targetId);
     if (fromIdx < 0 || targetIdx < 0) return;
-    // Remove from old position first; recompute insert index relative to
-    // the post-removal array.
     const without = ids.filter((_, i) => i !== fromIdx);
     let insertIdx = without.indexOf(targetId);
     if (position === "after") insertIdx += 1;
     const next = [
       ...without.slice(0, insertIdx),
-      draggingId,
+      sourceId,
       ...without.slice(insertIdx),
     ];
-    if (next.every((id, i) => id === ids[i])) return; // no-op
+    if (next.every((id, i) => id === ids[i])) return;
     void reorder(next);
+  }
+
+  /**
+   * Pointer-events-based drag start, called by the grip-handle on each
+   * tab. We deliberately don't use HTML5 drag-and-drop because WKWebView
+   * (Tauri's macOS WebView) initiates the drag but doesn't fire dragover
+   * on in-page targets, which made the drop indicator never appear.
+   */
+  function startPointerDrag(slideId: string, e: React.PointerEvent) {
+    // Don't preventDefault — that would block subsequent pointermove on
+    // some platforms. Just stopPropagation so the click doesn't reach the
+    // TabsTrigger.
+    e.stopPropagation();
+    setEditingTitleId(null);
+    setDraggingId(slideId);
+    setLastDragoverDebug(null);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "grabbing";
+
+    const findTabUnderPointer = (
+      x: number,
+      y: number,
+    ): { id: string; rect: DOMRect } | null => {
+      // Walk up from the topmost element under the pointer until we hit
+      // a wrapper with data-slide-id set. Using elementFromPoint instead
+      // of dragover lets us route correctly even though WKWebView's
+      // HTML5 DnD events are unreliable here.
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      if (!el) return null;
+      const tab = el.closest<HTMLElement>("[data-slide-id]");
+      if (!tab) return null;
+      const id = tab.getAttribute("data-slide-id");
+      if (!id) return null;
+      return { id, rect: tab.getBoundingClientRect() };
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const hit = findTabUnderPointer(ev.clientX, ev.clientY);
+      if (!hit) return;
+      const position: "before" | "after" =
+        ev.clientY < hit.rect.top + hit.rect.height / 2 ? "before" : "after";
+      // Diagnostics: track every move regardless of source/target.
+      setLastDragoverDebug((prev) => ({
+        targetId: hit.id,
+        position,
+        count:
+          prev?.targetId === hit.id && prev.position === position
+            ? prev.count + 1
+            : 1,
+      }));
+      if (hit.id === slideId) return; // hovering the source — no commit
+      setDropTarget((prev) =>
+        prev?.id === hit.id && prev.position === position
+          ? prev
+          : { id: hit.id, position },
+      );
+    };
+
+    const cleanup = () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onCancel);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      setDraggingId(null);
+      setDropTarget(null);
+      setLastDragoverDebug(null);
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      const hit = findTabUnderPointer(ev.clientX, ev.clientY);
+      if (hit && hit.id !== slideId) {
+        const position: "before" | "after" =
+          ev.clientY < hit.rect.top + hit.rect.height / 2
+            ? "before"
+            : "after";
+        commitDrop(hit.id, position);
+      }
+      cleanup();
+    };
+
+    const onCancel = () => {
+      cleanup();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onCancel);
   }
   const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
@@ -283,46 +377,9 @@ export function CarouselEditor({
                 onCancelEdit={() => setEditingTitleId(null)}
                 onSaveTitle={async (next) => {
                   setEditingTitleId(null);
-                  // updateTitle in the hook normalizes empty → null, so
-                  // submitting blank reverts to the auto-derived title.
                   await updateTitle(s.id, next);
                 }}
-                onDragStart={() => {
-                  // Cancel any in-flight title edit so the input doesn't
-                  // ghost-render under the drag image.
-                  setEditingTitleId(null);
-                  setDraggingId(s.id);
-                  setLastDragoverDebug(null);
-                }}
-                onDragOverPosition={(position) => {
-                  // Always record the raw signal for diagnostics so we can
-                  // tell whether dragover is firing AT ALL on this tab,
-                  // independent of the source-vs-target gating below.
-                  setLastDragoverDebug((prev) => ({
-                    targetId: s.id,
-                    position,
-                    count: prev?.targetId === s.id && prev.position === position
-                      ? prev.count + 1
-                      : 1,
-                  }));
-                  if (!draggingId || draggingId === s.id) return;
-                  setDropTarget((prev) =>
-                    prev?.id === s.id && prev.position === position
-                      ? prev
-                      : { id: s.id, position },
-                  );
-                }}
-                onDragLeave={() => {
-                  setDropTarget((prev) =>
-                    prev?.id === s.id ? null : prev,
-                  );
-                }}
-                onDrop={(position) => handleDrop(s.id, position)}
-                onDragEnd={() => {
-                  setDraggingId(null);
-                  setDropTarget(null);
-                  setLastDragoverDebug(null);
-                }}
+                onGripPointerDown={(e) => startPointerDrag(s.id, e)}
               />
             ))}
           </TabsList>
@@ -625,11 +682,7 @@ function SlideTabTrigger({
   onStartEdit,
   onCancelEdit,
   onSaveTitle,
-  onDragStart,
-  onDragOverPosition,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
+  onGripPointerDown,
 }: {
   slide: Slide;
   index: number;
@@ -639,11 +692,7 @@ function SlideTabTrigger({
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaveTitle: (next: string) => Promise<void>;
-  onDragStart: () => void;
-  onDragOverPosition: (position: "before" | "after") => void;
-  onDragLeave: () => void;
-  onDrop: (position: "before" | "after") => void;
-  onDragEnd: () => void;
+  onGripPointerDown: (e: React.PointerEvent) => void;
 }) {
   const visibleTitle = effectiveSlideTitle(slide.title, slide.content, index);
 
@@ -658,16 +707,13 @@ function SlideTabTrigger({
     );
   }
 
-  // Pick insert-before vs insert-after by mouse position over this tab.
-  function positionFromEvent(e: React.DragEvent<HTMLElement>): "before" | "after" {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
-  }
-
   return (
-    <div className="relative w-full">
-      {/* Drop bars: deliberately oversized + lime green so they cannot
-          possibly be confused with a styling miss while we debug DnD. */}
+    // The data-slide-id attribute is what the parent's pointer-drag
+    // walker looks up via document.elementFromPoint().closest(). Without
+    // this, drag detection breaks.
+    <div className="relative w-full" data-slide-id={slide.id}>
+      {/* Drop bars: oversized + lime so they're visible against the dark
+          theme. Bumped from 4px to 8px after the first round didn't show. */}
       {dropIndicator === "before" && (
         <div
           aria-hidden
@@ -680,9 +726,8 @@ function SlideTabTrigger({
           className="pointer-events-none absolute left-0 right-0 -bottom-1 h-2 rounded-full bg-lime-400 ring-2 ring-lime-200 shadow-lg shadow-lime-500/50 z-20"
         />
       )}
-      {/* Translucent half-tab overlay: shows the actual drop ZONE, so the
-          user can see exactly which half of the tab counts as "before" vs
-          "after". */}
+      {/* Translucent half-tab overlay: shows the drop zone, not just the
+          boundary line. */}
       {dropIndicator === "before" && (
         <div
           aria-hidden
@@ -697,61 +742,30 @@ function SlideTabTrigger({
       )}
       <TabsTrigger
         value={slide.id}
-        className={`group/tab w-full justify-between gap-1.5 ${
+        className={`group/tab w-full justify-between gap-1 ${
           isDragging ? "opacity-40 ring-2 ring-amber-400" : ""
         }`}
         title={visibleTitle}
-        draggable
-        onDragStart={(e) => {
-          // dataTransfer needs *something* on Firefox or the drag aborts.
-          // We don't actually use it — state is in the parent.
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", slide.id);
-          console.log("[dnd] dragstart", { slideId: slide.id });
-          onDragStart();
-        }}
-        onDragOver={(e) => {
-          // preventDefault is what tells the browser this is a valid drop
-          // target. Without it, drop never fires.
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          const pos = positionFromEvent(e);
-          // While diagnosing, log every dragover so we can see exactly
-          // which target is being hit. The pill-counter dedupes for the
-          // user's eyes; the console gives us the raw stream.
-          console.log("[dnd] dragover", {
-            targetId: slide.id,
-            pos,
-            clientY: e.clientY,
-          });
-          onDragOverPosition(pos);
-        }}
-        onDragLeave={() => {
-          console.log("[dnd] dragleave", { targetId: slide.id });
-          onDragLeave();
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          const pos = positionFromEvent(e);
-          console.log("[dnd] drop", { targetId: slide.id, pos });
-          onDrop(pos);
-        }}
-        onDragEnd={() => {
-          console.log("[dnd] dragend", { slideId: slide.id });
-          onDragEnd();
-        }}
       >
+        {/* Grip handle. Drag is a pointer-events-driven custom impl
+            because WKWebView's HTML5 dragover doesn't fire reliably on
+            in-page targets. The handle has cursor-grab and starts the
+            drag in onPointerDown. The rest of the tab area still
+            click-selects via TabsTrigger normally. */}
+        <span
+          role="button"
+          aria-label="Reorder slide"
+          tabIndex={-1}
+          onPointerDown={onGripPointerDown}
+          className="shrink-0 -ml-1 cursor-grab active:cursor-grabbing rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
+        >
+          <GripVertical className="size-3.5" />
+        </span>
         <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
         <span
           role="button"
           aria-label="Edit slide title"
-          // The pencil sits inside a <button> (TabsTrigger). Putting a real
-          // <button> inside another button is invalid HTML, so we use a
-          // role="button" span with the same keyboard semantics. Click is
-          // captured before the trigger sees it.
           tabIndex={-1}
-          // draggable=false so grabbing the pencil doesn't initiate a drag.
-          draggable={false}
           className="shrink-0 rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
           onClick={(e) => {
             e.stopPropagation();
