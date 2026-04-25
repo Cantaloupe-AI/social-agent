@@ -69,6 +69,14 @@ export function CarouselEditor({
     id: string;
     position: "before" | "after";
   } | null>(null);
+  // Debug-only: last dragover signal regardless of whether we acted on it.
+  // If this updates while `dropTarget` stays null, you know dragover is
+  // firing fine and the early-return path (over the source) is the cause.
+  const [lastDragoverDebug, setLastDragoverDebug] = useState<{
+    targetId: string;
+    position: "before" | "after";
+    count: number;
+  } | null>(null);
 
   function handleDrop(targetId: string, position: "before" | "after") {
     setDraggingId(null);
@@ -235,13 +243,23 @@ export function CarouselEditor({
               the drop target, and which half of it. Remove once the
               ordering UX is stable. */}
           {draggingId && (
-            <div className="absolute left-2 top-2 z-30 rounded-md bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 text-[10px] font-mono px-2 py-1 ring-1 ring-amber-400 shadow-md">
+            <div className="absolute left-40 top-0 z-30 rounded-md bg-amber-100 dark:bg-amber-900/95 text-amber-900 dark:text-amber-100 text-[10px] font-mono px-2 py-1 ring-1 ring-amber-400 shadow-md max-w-[300px] whitespace-nowrap">
               <div>dragging: {draggingId.slice(0, 8)}…</div>
               <div>
-                over:{" "}
+                <span className="text-emerald-500">commit:</span>{" "}
                 {dropTarget
                   ? `${dropTarget.id.slice(0, 8)}… (${dropTarget.position})`
                   : "—"}
+              </div>
+              <div>
+                <span className="text-blue-400">last hover:</span>{" "}
+                {lastDragoverDebug
+                  ? `${lastDragoverDebug.targetId.slice(0, 8)}… (${lastDragoverDebug.position}) ×${lastDragoverDebug.count}`
+                  : "— (no dragover yet)"}
+              </div>
+              <div className="text-amber-300/70 mt-0.5">
+                If "last hover" shows your own slide id only, you need to
+                move the cursor *onto another tab*.
               </div>
             </div>
           )}
@@ -274,8 +292,19 @@ export function CarouselEditor({
                   // ghost-render under the drag image.
                   setEditingTitleId(null);
                   setDraggingId(s.id);
+                  setLastDragoverDebug(null);
                 }}
                 onDragOverPosition={(position) => {
+                  // Always record the raw signal for diagnostics so we can
+                  // tell whether dragover is firing AT ALL on this tab,
+                  // independent of the source-vs-target gating below.
+                  setLastDragoverDebug((prev) => ({
+                    targetId: s.id,
+                    position,
+                    count: prev?.targetId === s.id && prev.position === position
+                      ? prev.count + 1
+                      : 1,
+                  }));
                   if (!draggingId || draggingId === s.id) return;
                   setDropTarget((prev) =>
                     prev?.id === s.id && prev.position === position
@@ -292,6 +321,7 @@ export function CarouselEditor({
                 onDragEnd={() => {
                   setDraggingId(null);
                   setDropTarget(null);
+                  setLastDragoverDebug(null);
                 }}
               />
             ))}
@@ -686,17 +716,14 @@ function SlideTabTrigger({
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
           const pos = positionFromEvent(e);
-          // Throttle the log a bit — dragover fires constantly. Only log
-          // when the computed position changes by logging via state path
-          // (the parent dedupes setDropTarget). Here we log once per call
-          // since we *want* to see if it's firing; comment back later.
-          if (Math.random() < 0.05) {
-            console.log("[dnd] dragover", {
-              targetId: slide.id,
-              pos,
-              clientY: e.clientY,
-            });
-          }
+          // While diagnosing, log every dragover so we can see exactly
+          // which target is being hit. The pill-counter dedupes for the
+          // user's eyes; the console gives us the raw stream.
+          console.log("[dnd] dragover", {
+            targetId: slide.id,
+            pos,
+            clientY: e.clientY,
+          });
           onDragOverPosition(pos);
         }}
         onDragLeave={() => {
