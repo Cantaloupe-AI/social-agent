@@ -23,6 +23,7 @@ pub fn run() {
             commands::list_slides,
             commands::create_slide,
             commands::update_slide_content,
+            commands::update_slide_title,
             commands::delete_slide,
             commands::list_slide_versions,
             commands::list_slide_feedback,

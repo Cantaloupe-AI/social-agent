@@ -135,6 +135,11 @@ pub struct Slide {
     pub carousel_id: String,
     pub order_index: i64,
     pub content: String,
+    /// User-edited slide title. `None` means "auto-derive from content"
+    /// (the frontend uses the first `# header` line or the first
+    /// non-empty line); `Some(s)` is whatever the user explicitly typed
+    /// in the title input.
+    pub title: Option<String>,
     pub status: SlideStatus,
     pub last_error: Option<String>,
     pub created_at: DateTime<Utc>,

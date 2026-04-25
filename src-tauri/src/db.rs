@@ -103,6 +103,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         "TEXT NOT NULL CHECK (status IN ('idle','queued','generating','reviewing','accepted','failed')) DEFAULT 'idle'",
     )?;
     ensure_column(conn, "slides", "last_error", "TEXT")?;
+    ensure_column(conn, "slides", "title", "TEXT")?;
 
     backfill_slugs(conn)?;
 
@@ -449,17 +450,18 @@ pub fn set_carousel_run_finished(
 }
 
 const SLIDE_COLUMNS: &str =
-    "id, carousel_id, order_index, content, status, last_error, created_at, updated_at";
+    "id, carousel_id, order_index, content, title, status, last_error, created_at, updated_at";
 
 fn map_slide_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Slide> {
     let id: String = row.get(0)?;
     let carousel_id: String = row.get(1)?;
     let order_index: i64 = row.get(2)?;
     let content: String = row.get(3)?;
-    let status: String = row.get(4)?;
-    let last_error: Option<String> = row.get(5)?;
-    let created_at: String = row.get(6)?;
-    let updated_at: String = row.get(7)?;
+    let title: Option<String> = row.get(4)?;
+    let status: String = row.get(5)?;
+    let last_error: Option<String> = row.get(6)?;
+    let created_at: String = row.get(7)?;
+    let updated_at: String = row.get(8)?;
     let parse_dt = |s: &str| {
         DateTime::parse_from_rfc3339(s)
             .map(|d| d.with_timezone(&Utc))
@@ -476,6 +478,7 @@ fn map_slide_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Slide> {
         carousel_id,
         order_index,
         content,
+        title,
         status: SlideStatus::from_str(&status).unwrap_or(SlideStatus::Idle),
         last_error,
         created_at: parse_dt(&created_at)?,
@@ -553,6 +556,38 @@ pub fn update_slide_content(conn: &Connection, id: &str, content: &str) -> Resul
         params![id, content, now],
     )
     .context("updating slide content")?;
+    Ok(())
+}
+
+/// Set or clear the user-edited slide title.
+///
+/// `None` clears the column to NULL — meaning "auto-derive from content"
+/// to the frontend. `Some("")` is treated the same as `None` so that a
+/// user clearing the input reverts to the default rather than locking in
+/// an empty string.
+pub fn update_slide_title(
+    conn: &Connection,
+    id: &str,
+    title: Option<&str>,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let normalized = title.and_then(|t| {
+        let trimmed = t.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    conn.execute(
+        r#"
+        UPDATE slides
+        SET title = ?2, updated_at = ?3
+        WHERE id = ?1
+        "#,
+        params![id, normalized, now],
+    )
+    .context("updating slide title")?;
     Ok(())
 }
 
@@ -1005,6 +1040,29 @@ mod tests {
         let cleared = get_slide(&conn, &s.id).unwrap().unwrap();
         assert_eq!(cleared.status, SlideStatus::Accepted);
         assert!(cleared.last_error.is_none());
+    }
+
+    #[test]
+    fn slide_title_default_and_roundtrip() {
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "title-deck").unwrap();
+        let s = create_slide(&conn, &c.id).unwrap();
+        // Default: no user-set title.
+        assert!(s.title.is_none());
+
+        update_slide_title(&conn, &s.id, Some("Where Opus 4.7 Excels")).unwrap();
+        let after = get_slide(&conn, &s.id).unwrap().unwrap();
+        assert_eq!(after.title.as_deref(), Some("Where Opus 4.7 Excels"));
+
+        // Whitespace-only / empty input clears back to NULL (auto-derive).
+        update_slide_title(&conn, &s.id, Some("   ")).unwrap();
+        let cleared_blank = get_slide(&conn, &s.id).unwrap().unwrap();
+        assert!(cleared_blank.title.is_none());
+
+        update_slide_title(&conn, &s.id, Some("Edited")).unwrap();
+        update_slide_title(&conn, &s.id, None).unwrap();
+        let cleared_none = get_slide(&conn, &s.id).unwrap().unwrap();
+        assert!(cleared_none.title.is_none());
     }
 
     #[test]

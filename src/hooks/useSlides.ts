@@ -5,6 +5,7 @@ import {
   deleteSlide as deleteSlideCmd,
   listSlides,
   updateSlideContent as updateSlideContentCmd,
+  updateSlideTitle as updateSlideTitleCmd,
 } from "@/lib/tauri";
 
 export interface UseSlidesResult {
@@ -14,6 +15,7 @@ export interface UseSlidesResult {
   refresh: () => Promise<void>;
   create: () => Promise<Slide>;
   updateContent: (id: string, content: string) => Promise<void>;
+  updateTitle: (id: string, title: string | null) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -86,6 +88,32 @@ export function useSlides(carouselId: string): UseSlidesResult {
     }
   }, []);
 
+  const updateTitle = useCallback(
+    async (id: string, title: string | null) => {
+      // Optimistic — update local state, persist in the background. Keep the
+      // shape consistent: empty string is normalized to null on the Rust
+      // side, so we mirror that here so the UI revert-on-blank works
+      // without an extra round trip.
+      const normalized = title?.trim() ? title.trim() : null;
+      setSlides((prev) =>
+        prev.map((s) =>
+          s.id === id
+            ? { ...s, title: normalized, updated_at: new Date().toISOString() }
+            : s,
+        ),
+      );
+      try {
+        await updateSlideTitleCmd(id, normalized);
+        setError(null);
+      } catch (e: unknown) {
+        console.error("cantalog: updateSlideTitle failed", e);
+        setError(String(e));
+        throw e;
+      }
+    },
+    [],
+  );
+
   const remove = useCallback(async (id: string) => {
     try {
       await deleteSlideCmd(id);
@@ -97,5 +125,14 @@ export function useSlides(carouselId: string): UseSlidesResult {
     }
   }, []);
 
-  return { slides, loading, error, refresh, create, updateContent, remove };
+  return {
+    slides,
+    loading,
+    error,
+    refresh,
+    create,
+    updateContent,
+    updateTitle,
+    remove,
+  };
 }

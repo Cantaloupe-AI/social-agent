@@ -122,6 +122,16 @@ pub async fn update_slide_content(id: String, content: String) -> Result<(), Str
 }
 
 #[tauri::command]
+pub async fn update_slide_title(
+    id: String,
+    title: Option<String>,
+) -> Result<(), String> {
+    let conn = open_db()?;
+    crate::db::update_slide_title(&conn, &id, title.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn delete_slide(id: String) -> Result<(), String> {
     let conn = open_db()?;
     crate::db::delete_slide(&conn, &id).map_err(|e| e.to_string())

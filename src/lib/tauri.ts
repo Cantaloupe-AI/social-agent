@@ -87,6 +87,13 @@ export async function updateSlideContent(
   await call<void>("update_slide_content", { id, content });
 }
 
+export async function updateSlideTitle(
+  id: string,
+  title: string | null,
+): Promise<void> {
+  await call<void>("update_slide_title", { id, title });
+}
+
 export async function deleteSlide(id: string): Promise<void> {
   await call<void>("delete_slide", { id });
 }

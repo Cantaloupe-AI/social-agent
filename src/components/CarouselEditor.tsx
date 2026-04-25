@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, FileDown, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  FileDown,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -14,7 +23,8 @@ import {
   openPdf,
   readSlideScreenshotDataUrl,
 } from "@/lib/tauri";
-import type { Carousel, SlideStatus } from "@/lib/types";
+import type { Carousel, Slide, SlideStatus } from "@/lib/types";
+import { effectiveSlideTitle } from "@/lib/slide-title";
 
 interface CarouselEditorProps {
   carouselId: string;
@@ -38,9 +48,12 @@ export function CarouselEditor({
   onBack,
   onGenerationActive,
 }: CarouselEditorProps) {
-  const { slides, loading, error, create, updateContent, remove } =
+  const { slides, loading, error, create, updateContent, updateTitle, remove } =
     useSlides(carouselId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // When non-null, that slide's tab is showing an inline title-edit input
+  // instead of the title + pencil affordance.
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -182,9 +195,23 @@ export function CarouselEditor({
         >
           <TabsList>
             {slides.map((s, i) => (
-              <TabsTrigger key={s.id} value={s.id}>
-                Slide {i + 1}
-              </TabsTrigger>
+              <SlideTabTrigger
+                key={s.id}
+                slide={s}
+                index={i}
+                isEditing={editingTitleId === s.id}
+                onStartEdit={() => {
+                  setActiveId(s.id);
+                  setEditingTitleId(s.id);
+                }}
+                onCancelEdit={() => setEditingTitleId(null)}
+                onSaveTitle={async (next) => {
+                  setEditingTitleId(null);
+                  // updateTitle in the hook normalizes empty → null, so
+                  // submitting blank reverts to the auto-derived title.
+                  await updateTitle(s.id, next);
+                }}
+              />
             ))}
           </TabsList>
 
@@ -473,6 +500,147 @@ function SlideRenderPreview({
         className="block max-w-full h-auto rounded border border-border/50"
         style={{ maxHeight: 540 }}
       />
+    </div>
+  );
+}
+
+function SlideTabTrigger({
+  slide,
+  index,
+  isEditing,
+  onStartEdit,
+  onCancelEdit,
+  onSaveTitle,
+}: {
+  slide: Slide;
+  index: number;
+  isEditing: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveTitle: (next: string) => Promise<void>;
+}) {
+  const visibleTitle = effectiveSlideTitle(slide.title, slide.content, index);
+
+  if (isEditing) {
+    return (
+      <SlideTitleEditor
+        slideId={slide.id}
+        initial={visibleTitle}
+        onCancel={onCancelEdit}
+        onSubmit={onSaveTitle}
+      />
+    );
+  }
+
+  return (
+    <TabsTrigger
+      value={slide.id}
+      className="group/tab w-full justify-between gap-1.5"
+      title={visibleTitle}
+    >
+      <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
+      <span
+        role="button"
+        aria-label="Edit slide title"
+        // The pencil sits inside a <button> (TabsTrigger). Putting a real
+        // <button> inside another button is invalid HTML, so we use a
+        // role="button" span with the same keyboard semantics. Click is
+        // captured before the trigger sees it.
+        tabIndex={-1}
+        className="shrink-0 rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onStartEdit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.stopPropagation();
+            e.preventDefault();
+            onStartEdit();
+          }
+        }}
+      >
+        <Pencil className="size-3" />
+      </span>
+    </TabsTrigger>
+  );
+}
+
+function SlideTitleEditor({
+  slideId,
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  slideId: string;
+  initial: string;
+  onCancel: () => void;
+  onSubmit: (next: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(initial);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Autofocus + select all on enter — feels natural for "edit this label".
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+    // slideId is part of the dep list so refocusing happens if the user
+    // somehow re-enters edit mode for a different slide without unmounting.
+  }, [slideId]);
+
+  async function commit() {
+    try {
+      await onSubmit(value);
+    } catch (e: unknown) {
+      console.error("cantalog: SlideTitleEditor submit failed", e);
+      onCancel();
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-background ring-1 ring-border">
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={() => void commit()}
+        placeholder="Slide title"
+        className="flex-1 min-w-0 bg-transparent text-sm outline-none"
+      />
+      <button
+        type="button"
+        aria-label="Save title"
+        // Use onMouseDown to fire before the input's onBlur, so blur sees
+        // the post-mouse state and we don't get a double-commit.
+        onMouseDown={(e) => {
+          e.preventDefault();
+          void commit();
+        }}
+        className="rounded p-0.5 hover:bg-muted/60"
+      >
+        <Check className="size-3" />
+      </button>
+      <button
+        type="button"
+        aria-label="Cancel title edit"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onCancel();
+        }}
+        className="rounded p-0.5 hover:bg-muted/60"
+      >
+        <X className="size-3" />
+      </button>
     </div>
   );
 }

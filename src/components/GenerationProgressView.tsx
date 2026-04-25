@@ -21,6 +21,7 @@ import {
   readRunLogTail,
   readSlideScreenshotDataUrl,
 } from "@/lib/tauri";
+import { effectiveSlideTitle } from "@/lib/slide-title";
 import type {
   Carousel,
   CarouselStatus,
@@ -197,10 +198,12 @@ function SlideListPanel({
     <div className="rounded-md border border-input bg-muted/10 p-1 overflow-y-auto">
       {slides.map((s, i) => {
         const isSelected = s.id === selectedId;
+        const title = effectiveSlideTitle(s.title, s.content, i);
         return (
           <button
             key={s.id}
             onClick={() => onSelect(s.id)}
+            title={title}
             className={`w-full text-left px-2.5 py-2 rounded-md flex items-center gap-2 ${
               isSelected
                 ? "bg-accent text-accent-foreground"
@@ -208,7 +211,9 @@ function SlideListPanel({
             }`}
           >
             <SlideStatusIcon status={s.status} />
-            <span className="text-sm font-medium">Slide {i + 1}</span>
+            <span className="text-sm font-medium truncate min-w-0 flex-1">
+              {title}
+            </span>
             {s.last_error && !isSelected && (
               <span
                 className="ml-auto text-[10px] text-destructive truncate max-w-[80px]"
@@ -297,9 +302,15 @@ function SlideDetailPanel({ slide }: { slide: Slide | null }) {
 
   return (
     <div className="rounded-md border border-input bg-card/40 p-3 overflow-y-auto">
-      <div className="flex items-center gap-2 mb-2">
-        <h2 className="text-sm font-semibold">
+      <div className="flex items-center gap-2 mb-2 min-w-0">
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground shrink-0">
           Slide {slide.order_index + 1}
+        </span>
+        <h2
+          className="text-sm font-semibold truncate min-w-0"
+          title={effectiveSlideTitle(slide.title, slide.content, slide.order_index)}
+        >
+          {effectiveSlideTitle(slide.title, slide.content, slide.order_index)}
         </h2>
         <SlideStatusBadge status={slide.status} />
         {slide.last_error && (

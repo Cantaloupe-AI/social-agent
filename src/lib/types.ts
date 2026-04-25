@@ -59,6 +59,12 @@ export interface Slide {
   carousel_id: string;
   order_index: number;
   content: string;
+  /**
+   * User-edited title. `null` means "auto-derive" — the UI computes a
+   * default from the first `# header` or the first non-empty line of
+   * `content`. A non-null string is whatever the user explicitly typed.
+   */
+  title: string | null;
   status: SlideStatus;
   last_error: string | null;
   created_at: string;
