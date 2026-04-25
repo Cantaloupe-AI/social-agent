@@ -138,6 +138,16 @@ pub async fn delete_slide(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn reorder_slides(
+    carousel_id: String,
+    ordered_ids: Vec<String>,
+) -> Result<(), String> {
+    let mut conn = open_db()?;
+    crate::db::reorder_slides(&mut conn, &carousel_id, &ordered_ids)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_slide_versions(slide_id: String) -> Result<Vec<SlideVersion>, String> {
     let conn = open_db()?;
     crate::db::list_slide_versions(&conn, &slide_id).map_err(|e| e.to_string())

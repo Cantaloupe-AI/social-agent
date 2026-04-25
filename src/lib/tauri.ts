@@ -98,6 +98,13 @@ export async function deleteSlide(id: string): Promise<void> {
   await call<void>("delete_slide", { id });
 }
 
+export async function reorderSlides(
+  carouselId: string,
+  orderedIds: string[],
+): Promise<void> {
+  await call<void>("reorder_slides", { carouselId, orderedIds });
+}
+
 export async function listSlideVersions(slideId: string): Promise<SlideVersion[]> {
   return call<SlideVersion[]>("list_slide_versions", { slideId });
 }

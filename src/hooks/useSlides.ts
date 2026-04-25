@@ -4,6 +4,7 @@ import {
   createSlide as createSlideCmd,
   deleteSlide as deleteSlideCmd,
   listSlides,
+  reorderSlides as reorderSlidesCmd,
   updateSlideContent as updateSlideContentCmd,
   updateSlideTitle as updateSlideTitleCmd,
 } from "@/lib/tauri";
@@ -16,6 +17,7 @@ export interface UseSlidesResult {
   create: () => Promise<Slide>;
   updateContent: (id: string, content: string) => Promise<void>;
   updateTitle: (id: string, title: string | null) => Promise<void>;
+  reorder: (orderedIds: string[]) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
@@ -114,6 +116,50 @@ export function useSlides(carouselId: string): UseSlidesResult {
     [],
   );
 
+  const reorder = useCallback(
+    async (orderedIds: string[]) => {
+      // Optimistic: rearrange local state immediately, persist after.
+      // If the carousel id changes mid-call (user navigates back) the
+      // promise still completes; it just updates a stale state, which is
+      // harmless because we never expose stale ordering to the user.
+      setSlides((prev) => {
+        const byId = new Map(prev.map((s) => [s.id, s] as const));
+        const next: Slide[] = [];
+        orderedIds.forEach((id, idx) => {
+          const s = byId.get(id);
+          if (s) next.push({ ...s, order_index: idx });
+        });
+        // Append any slide that wasn't in orderedIds (defensive — caller
+        // should always pass every slide).
+        for (const s of prev) {
+          if (!orderedIds.includes(s.id)) {
+            next.push({ ...s, order_index: next.length });
+          }
+        }
+        return next;
+      });
+      try {
+        await reorderSlidesCmd(carouselId, orderedIds);
+        setError(null);
+      } catch (e: unknown) {
+        console.error("cantalog: reorderSlides failed", e);
+        setError(String(e));
+        // Revert by re-fetching authoritative state.
+        try {
+          const xs = await listSlides(carouselId);
+          setSlides(xs);
+        } catch (refreshErr) {
+          console.error(
+            "cantalog: refetch after failed reorder also failed",
+            refreshErr,
+          );
+        }
+        throw e;
+      }
+    },
+    [carouselId],
+  );
+
   const remove = useCallback(async (id: string) => {
     try {
       await deleteSlideCmd(id);
@@ -133,6 +179,7 @@ export function useSlides(carouselId: string): UseSlidesResult {
     create,
     updateContent,
     updateTitle,
+    reorder,
     remove,
   };
 }

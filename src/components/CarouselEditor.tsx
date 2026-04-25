@@ -48,12 +48,49 @@ export function CarouselEditor({
   onBack,
   onGenerationActive,
 }: CarouselEditorProps) {
-  const { slides, loading, error, create, updateContent, updateTitle, remove } =
-    useSlides(carouselId);
+  const {
+    slides,
+    loading,
+    error,
+    create,
+    updateContent,
+    updateTitle,
+    reorder,
+    remove,
+  } = useSlides(carouselId);
   const [activeId, setActiveId] = useState<string | null>(null);
   // When non-null, that slide's tab is showing an inline title-edit input
   // instead of the title + pencil affordance.
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  // Drag-to-reorder state. We only commit the new order on drop; while
+  // dragging this only drives visual indicators.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    id: string;
+    position: "before" | "after";
+  } | null>(null);
+
+  function handleDrop(targetId: string, position: "before" | "after") {
+    setDraggingId(null);
+    setDropTarget(null);
+    if (!draggingId || draggingId === targetId) return;
+    const ids = slides.map((s) => s.id);
+    const fromIdx = ids.indexOf(draggingId);
+    const targetIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || targetIdx < 0) return;
+    // Remove from old position first; recompute insert index relative to
+    // the post-removal array.
+    const without = ids.filter((_, i) => i !== fromIdx);
+    let insertIdx = without.indexOf(targetId);
+    if (position === "after") insertIdx += 1;
+    const next = [
+      ...without.slice(0, insertIdx),
+      draggingId,
+      ...without.slice(insertIdx),
+    ];
+    if (next.every((id, i) => id === ids[i])) return; // no-op
+    void reorder(next);
+  }
   const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -200,6 +237,12 @@ export function CarouselEditor({
                 slide={s}
                 index={i}
                 isEditing={editingTitleId === s.id}
+                isDragging={draggingId === s.id}
+                dropIndicator={
+                  dropTarget?.id === s.id && draggingId !== s.id
+                    ? dropTarget.position
+                    : null
+                }
                 onStartEdit={() => {
                   setActiveId(s.id);
                   setEditingTitleId(s.id);
@@ -210,6 +253,30 @@ export function CarouselEditor({
                   // updateTitle in the hook normalizes empty → null, so
                   // submitting blank reverts to the auto-derived title.
                   await updateTitle(s.id, next);
+                }}
+                onDragStart={() => {
+                  // Cancel any in-flight title edit so the input doesn't
+                  // ghost-render under the drag image.
+                  setEditingTitleId(null);
+                  setDraggingId(s.id);
+                }}
+                onDragOverPosition={(position) => {
+                  if (!draggingId || draggingId === s.id) return;
+                  setDropTarget((prev) =>
+                    prev?.id === s.id && prev.position === position
+                      ? prev
+                      : { id: s.id, position },
+                  );
+                }}
+                onDragLeave={() => {
+                  setDropTarget((prev) =>
+                    prev?.id === s.id ? null : prev,
+                  );
+                }}
+                onDrop={(position) => handleDrop(s.id, position)}
+                onDragEnd={() => {
+                  setDraggingId(null);
+                  setDropTarget(null);
                 }}
               />
             ))}
@@ -508,16 +575,30 @@ function SlideTabTrigger({
   slide,
   index,
   isEditing,
+  isDragging,
+  dropIndicator,
   onStartEdit,
   onCancelEdit,
   onSaveTitle,
+  onDragStart,
+  onDragOverPosition,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: {
   slide: Slide;
   index: number;
   isEditing: boolean;
+  isDragging: boolean;
+  dropIndicator: "before" | "after" | null;
   onStartEdit: () => void;
   onCancelEdit: () => void;
   onSaveTitle: (next: string) => Promise<void>;
+  onDragStart: () => void;
+  onDragOverPosition: (position: "before" | "after") => void;
+  onDragLeave: () => void;
+  onDrop: (position: "before" | "after") => void;
+  onDragEnd: () => void;
 }) {
   const visibleTitle = effectiveSlideTitle(slide.title, slide.content, index);
 
@@ -532,11 +613,48 @@ function SlideTabTrigger({
     );
   }
 
+  // Pick insert-before vs insert-after by mouse position over this tab.
+  function positionFromEvent(e: React.DragEvent<HTMLElement>): "before" | "after" {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  }
+
   return (
     <TabsTrigger
       value={slide.id}
-      className="group/tab w-full justify-between gap-1.5"
+      className={`group/tab w-full justify-between gap-1.5 relative ${
+        isDragging ? "opacity-40" : ""
+      } ${
+        dropIndicator === "before"
+          ? "before:absolute before:left-0 before:right-0 before:-top-px before:h-0.5 before:bg-primary before:rounded-full before:content-['']"
+          : ""
+      } ${
+        dropIndicator === "after"
+          ? "after:absolute after:left-0 after:right-0 after:-bottom-px after:h-0.5 after:bg-primary after:rounded-full after:content-['']"
+          : ""
+      }`}
       title={visibleTitle}
+      draggable
+      onDragStart={(e) => {
+        // dataTransfer needs *something* on Firefox or the drag aborts.
+        // We don't actually use it — state is in the parent.
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", slide.id);
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        // preventDefault is what tells the browser this is a valid drop
+        // target. Without it, drop never fires.
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOverPosition(positionFromEvent(e));
+      }}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop(positionFromEvent(e));
+      }}
+      onDragEnd={onDragEnd}
     >
       <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
       <span
@@ -547,6 +665,8 @@ function SlideTabTrigger({
         // role="button" span with the same keyboard semantics. Click is
         // captured before the trigger sees it.
         tabIndex={-1}
+        // draggable=false so grabbing the pencil doesn't initiate a drag.
+        draggable={false}
         className="shrink-0 rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
         onClick={(e) => {
           e.stopPropagation();

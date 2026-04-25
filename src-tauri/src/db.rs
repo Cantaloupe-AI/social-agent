@@ -611,6 +611,41 @@ pub fn reorder_slide(conn: &Connection, id: &str, new_index: i64) -> Result<()> 
     Ok(())
 }
 
+/// Replace the entire ordering of a carousel's slides in one transaction.
+///
+/// `ordered_ids[i]` becomes the slide at order_index = i. Every id must
+/// belong to the carousel; any slide id not in `ordered_ids` is left
+/// untouched (which would leave it in a stale spot — the caller should
+/// always pass every slide the carousel has). All updates run in a single
+/// transaction so a partial failure doesn't leave order_index half-shuffled.
+pub fn reorder_slides(
+    conn: &mut Connection,
+    carousel_id: &str,
+    ordered_ids: &[String],
+) -> Result<()> {
+    let tx = conn.transaction().context("starting reorder transaction")?;
+    let now = Utc::now().to_rfc3339();
+    for (idx, id) in ordered_ids.iter().enumerate() {
+        let rows = tx
+            .execute(
+                r#"
+                UPDATE slides
+                SET order_index = ?2, updated_at = ?3
+                WHERE id = ?1 AND carousel_id = ?4
+                "#,
+                params![id, idx as i64, now, carousel_id],
+            )
+            .with_context(|| format!("reordering slide {id} to {idx}"))?;
+        if rows == 0 {
+            return Err(anyhow!(
+                "slide {id} not found in carousel {carousel_id}"
+            ));
+        }
+    }
+    tx.commit().context("committing reorder transaction")?;
+    Ok(())
+}
+
 const SLIDE_VERSION_COLUMNS: &str =
     "id, slide_id, version_number, html_path, screenshot_path, pdf_path, created_at";
 
@@ -1040,6 +1075,52 @@ mod tests {
         let cleared = get_slide(&conn, &s.id).unwrap().unwrap();
         assert_eq!(cleared.status, SlideStatus::Accepted);
         assert!(cleared.last_error.is_none());
+    }
+
+    #[test]
+    fn reorder_slides_rotates_indexes() {
+        let mut conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "reorder").unwrap();
+        let s1 = create_slide(&conn, &c.id).unwrap();
+        let s2 = create_slide(&conn, &c.id).unwrap();
+        let s3 = create_slide(&conn, &c.id).unwrap();
+        // Sanity: initial order is creation order.
+        assert_eq!(s1.order_index, 0);
+        assert_eq!(s2.order_index, 1);
+        assert_eq!(s3.order_index, 2);
+
+        // New order: s3, s1, s2.
+        let new_order = vec![s3.id.clone(), s1.id.clone(), s2.id.clone()];
+        reorder_slides(&mut conn, &c.id, &new_order).unwrap();
+
+        let listed = list_slides(&conn, &c.id).unwrap();
+        assert_eq!(listed[0].id, s3.id);
+        assert_eq!(listed[0].order_index, 0);
+        assert_eq!(listed[1].id, s1.id);
+        assert_eq!(listed[1].order_index, 1);
+        assert_eq!(listed[2].id, s2.id);
+        assert_eq!(listed[2].order_index, 2);
+    }
+
+    #[test]
+    fn reorder_slides_rejects_foreign_id() {
+        let mut conn = open_in_memory().unwrap();
+        let a = create_carousel(&conn, "a").unwrap();
+        let b = create_carousel(&conn, "b").unwrap();
+        let a_slide = create_slide(&conn, &a.id).unwrap();
+        let b_slide = create_slide(&conn, &b.id).unwrap();
+        // Trying to reorder carousel A while including a slide from B
+        // must fail and leave both carousels untouched.
+        let bad = vec![a_slide.id.clone(), b_slide.id.clone()];
+        let res = reorder_slides(&mut conn, &a.id, &bad);
+        assert!(res.is_err());
+        // a_slide still at order_index 0, b_slide untouched.
+        let a_listed = list_slides(&conn, &a.id).unwrap();
+        let b_listed = list_slides(&conn, &b.id).unwrap();
+        assert_eq!(a_listed.len(), 1);
+        assert_eq!(a_listed[0].order_index, 0);
+        assert_eq!(b_listed.len(), 1);
+        assert_eq!(b_listed[0].order_index, 0);
     }
 
     #[test]

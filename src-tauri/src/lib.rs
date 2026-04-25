@@ -25,6 +25,7 @@ pub fn run() {
             commands::update_slide_content,
             commands::update_slide_title,
             commands::delete_slide,
+            commands::reorder_slides,
             commands::list_slide_versions,
             commands::list_slide_feedback,
             commands::generate_carousel_pdf,
