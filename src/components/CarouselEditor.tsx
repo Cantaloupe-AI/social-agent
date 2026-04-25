@@ -228,8 +228,23 @@ export function CarouselEditor({
           orientation="vertical"
           value={activeId ?? undefined}
           onValueChange={setActiveId}
-          className="min-h-[320px]"
+          className="min-h-[320px] relative"
         >
+          {/* Live drag-state debug strip. Visible only while a drag is in
+              flight; tells us whether the drag started, which slide is
+              the drop target, and which half of it. Remove once the
+              ordering UX is stable. */}
+          {draggingId && (
+            <div className="absolute left-2 top-2 z-30 rounded-md bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-100 text-[10px] font-mono px-2 py-1 ring-1 ring-amber-400 shadow-md">
+              <div>dragging: {draggingId.slice(0, 8)}…</div>
+              <div>
+                over:{" "}
+                {dropTarget
+                  ? `${dropTarget.id.slice(0, 8)}… (${dropTarget.position})`
+                  : "—"}
+              </div>
+            </div>
+          )}
           <TabsList>
             {slides.map((s, i) => (
               <SlideTabTrigger
@@ -621,22 +636,39 @@ function SlideTabTrigger({
 
   return (
     <div className="relative w-full">
+      {/* Drop bars: deliberately oversized + lime green so they cannot
+          possibly be confused with a styling miss while we debug DnD. */}
       {dropIndicator === "before" && (
         <div
           aria-hidden
-          className="pointer-events-none absolute left-0 right-0 -top-0.5 h-1 rounded-full bg-primary z-10"
+          className="pointer-events-none absolute left-0 right-0 -top-1 h-2 rounded-full bg-lime-400 ring-2 ring-lime-200 shadow-lg shadow-lime-500/50 z-20"
         />
       )}
       {dropIndicator === "after" && (
         <div
           aria-hidden
-          className="pointer-events-none absolute left-0 right-0 -bottom-0.5 h-1 rounded-full bg-primary z-10"
+          className="pointer-events-none absolute left-0 right-0 -bottom-1 h-2 rounded-full bg-lime-400 ring-2 ring-lime-200 shadow-lg shadow-lime-500/50 z-20"
+        />
+      )}
+      {/* Translucent half-tab overlay: shows the actual drop ZONE, so the
+          user can see exactly which half of the tab counts as "before" vs
+          "after". */}
+      {dropIndicator === "before" && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-lime-400/20 z-10 rounded-t-md"
+        />
+      )}
+      {dropIndicator === "after" && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-lime-400/20 z-10 rounded-b-md"
         />
       )}
       <TabsTrigger
         value={slide.id}
         className={`group/tab w-full justify-between gap-1.5 ${
-          isDragging ? "opacity-40" : ""
+          isDragging ? "opacity-40 ring-2 ring-amber-400" : ""
         }`}
         title={visibleTitle}
         draggable
@@ -645,6 +677,7 @@ function SlideTabTrigger({
           // We don't actually use it — state is in the parent.
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("text/plain", slide.id);
+          console.log("[dnd] dragstart", { slideId: slide.id });
           onDragStart();
         }}
         onDragOver={(e) => {
@@ -652,14 +685,34 @@ function SlideTabTrigger({
           // target. Without it, drop never fires.
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
-          onDragOverPosition(positionFromEvent(e));
+          const pos = positionFromEvent(e);
+          // Throttle the log a bit — dragover fires constantly. Only log
+          // when the computed position changes by logging via state path
+          // (the parent dedupes setDropTarget). Here we log once per call
+          // since we *want* to see if it's firing; comment back later.
+          if (Math.random() < 0.05) {
+            console.log("[dnd] dragover", {
+              targetId: slide.id,
+              pos,
+              clientY: e.clientY,
+            });
+          }
+          onDragOverPosition(pos);
         }}
-        onDragLeave={onDragLeave}
+        onDragLeave={() => {
+          console.log("[dnd] dragleave", { targetId: slide.id });
+          onDragLeave();
+        }}
         onDrop={(e) => {
           e.preventDefault();
-          onDrop(positionFromEvent(e));
+          const pos = positionFromEvent(e);
+          console.log("[dnd] drop", { targetId: slide.id, pos });
+          onDrop(pos);
         }}
-        onDragEnd={onDragEnd}
+        onDragEnd={() => {
+          console.log("[dnd] dragend", { slideId: slide.id });
+          onDragEnd();
+        }}
       >
         <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
         <span
