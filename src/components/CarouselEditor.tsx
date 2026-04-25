@@ -620,70 +620,76 @@ function SlideTabTrigger({
   }
 
   return (
-    <TabsTrigger
-      value={slide.id}
-      className={`group/tab w-full justify-between gap-1.5 relative ${
-        isDragging ? "opacity-40" : ""
-      } ${
-        dropIndicator === "before"
-          ? "before:absolute before:left-0 before:right-0 before:-top-px before:h-0.5 before:bg-primary before:rounded-full before:content-['']"
-          : ""
-      } ${
-        dropIndicator === "after"
-          ? "after:absolute after:left-0 after:right-0 after:-bottom-px after:h-0.5 after:bg-primary after:rounded-full after:content-['']"
-          : ""
-      }`}
-      title={visibleTitle}
-      draggable
-      onDragStart={(e) => {
-        // dataTransfer needs *something* on Firefox or the drag aborts.
-        // We don't actually use it — state is in the parent.
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", slide.id);
-        onDragStart();
-      }}
-      onDragOver={(e) => {
-        // preventDefault is what tells the browser this is a valid drop
-        // target. Without it, drop never fires.
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        onDragOverPosition(positionFromEvent(e));
-      }}
-      onDragLeave={onDragLeave}
-      onDrop={(e) => {
-        e.preventDefault();
-        onDrop(positionFromEvent(e));
-      }}
-      onDragEnd={onDragEnd}
-    >
-      <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
-      <span
-        role="button"
-        aria-label="Edit slide title"
-        // The pencil sits inside a <button> (TabsTrigger). Putting a real
-        // <button> inside another button is invalid HTML, so we use a
-        // role="button" span with the same keyboard semantics. Click is
-        // captured before the trigger sees it.
-        tabIndex={-1}
-        // draggable=false so grabbing the pencil doesn't initiate a drag.
-        draggable={false}
-        className="shrink-0 rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          onStartEdit();
+    <div className="relative w-full">
+      {dropIndicator === "before" && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-0 right-0 -top-0.5 h-1 rounded-full bg-primary z-10"
+        />
+      )}
+      {dropIndicator === "after" && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-0 right-0 -bottom-0.5 h-1 rounded-full bg-primary z-10"
+        />
+      )}
+      <TabsTrigger
+        value={slide.id}
+        className={`group/tab w-full justify-between gap-1.5 ${
+          isDragging ? "opacity-40" : ""
+        }`}
+        title={visibleTitle}
+        draggable
+        onDragStart={(e) => {
+          // dataTransfer needs *something* on Firefox or the drag aborts.
+          // We don't actually use it — state is in the parent.
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", slide.id);
+          onDragStart();
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
+        onDragOver={(e) => {
+          // preventDefault is what tells the browser this is a valid drop
+          // target. Without it, drop never fires.
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          onDragOverPosition(positionFromEvent(e));
+        }}
+        onDragLeave={onDragLeave}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDrop(positionFromEvent(e));
+        }}
+        onDragEnd={onDragEnd}
+      >
+        <span className="truncate text-left flex-1 min-w-0">{visibleTitle}</span>
+        <span
+          role="button"
+          aria-label="Edit slide title"
+          // The pencil sits inside a <button> (TabsTrigger). Putting a real
+          // <button> inside another button is invalid HTML, so we use a
+          // role="button" span with the same keyboard semantics. Click is
+          // captured before the trigger sees it.
+          tabIndex={-1}
+          // draggable=false so grabbing the pencil doesn't initiate a drag.
+          draggable={false}
+          className="shrink-0 rounded p-0.5 opacity-50 group-hover/tab:opacity-100 hover:bg-muted/60 hover:text-foreground transition-opacity"
+          onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
             onStartEdit();
-          }
-        }}
-      >
-        <Pencil className="size-3" />
-      </span>
-    </TabsTrigger>
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              e.preventDefault();
+              onStartEdit();
+            }
+          }}
+        >
+          <Pencil className="size-3" />
+        </span>
+      </TabsTrigger>
+    </div>
   );
 }
 
