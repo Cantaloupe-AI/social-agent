@@ -395,13 +395,33 @@ pub async fn generate_carousel_pdf(
         .spawn()
         .map_err(|e| {
             // Mark the carousel failed so the UI doesn't sit on 'generating'.
-            if let Ok(conn) = open_db() {
-                let _ = crate::db::set_carousel_run_finished(
-                    &conn,
-                    &carousel_id,
-                    CarouselStatus::Failed,
-                    None,
-                );
+            // Per CLAUDE.md §conventions/errors: no silent failures — if the
+            // cleanup itself fails (db locked, disk full, …) we still need the
+            // operator to see why the carousel is stuck.
+            match open_db() {
+                Ok(conn) => {
+                    if let Err(cleanup_err) = crate::db::set_carousel_run_finished(
+                        &conn,
+                        &carousel_id,
+                        CarouselStatus::Failed,
+                        None,
+                    ) {
+                        let msg = format!(
+                            "[supervisor] spawn failed AND failed to mark \
+                             carousel failed during cleanup: {cleanup_err}"
+                        );
+                        eprintln!("{msg}");
+                        append_log_line(&log_path, &msg);
+                    }
+                }
+                Err(open_err) => {
+                    let msg = format!(
+                        "[supervisor] spawn failed AND could not open db to \
+                         mark carousel failed: {open_err}"
+                    );
+                    eprintln!("{msg}");
+                    append_log_line(&log_path, &msg);
+                }
             }
             append_log_line(
                 &log_path,
