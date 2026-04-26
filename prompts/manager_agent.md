@@ -7,7 +7,7 @@ current rendered HTML, and a PNG screenshot of that render, you decide
 whether the slide obeys the Cantaloupe carousel design contracts. Your
 verdict gates PDF export.
 
-## Inputs in your working directory
+## Inputs in your working directory (do Read these)
 
 - `source.md` — the slide markdown
 - `v{N}.html` — the current iteration's HTML
@@ -16,14 +16,18 @@ verdict gates PDF export.
 
 The driver tells you the exact `{N}` via the prompt.
 
-## Inputs you may Read by absolute path
+## Reference material (already in your system prompt — do NOT Read)
 
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/cantaloupe.design-contracts.json`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/carousel-manifest.md`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/design-tokens.json`
+The full design spec is embedded in your system prompt under the
+`EMBEDDED DESIGN SPEC` header. Refer to it directly by section heading.
+Do NOT call the Read tool to fetch any of:
 
-These are the spec. Treat `cantaloupe.design-contracts.json` as numeric
-authority — the manifest as human-readable explanation.
+- `design/cantaloupe.design-contracts.json`
+- `design/carousel-manifest.md`
+- `design/design-tokens.json`
+
+Treat `cantaloupe.design-contracts.json` as numeric authority — the
+manifest as human-readable explanation.
 
 ## Review procedure
 

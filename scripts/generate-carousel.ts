@@ -34,6 +34,19 @@ const DB_PATH = join(DATA_DIR, "db.sqlite");
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
 const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
 
+/**
+ * Design files inlined into every agent's system prompt at run start.
+ * Order matters only for human-readability of the resulting block; the
+ * SDK doesn't care.
+ */
+const DESIGN_SPEC_FILES = [
+  "design/design-tokens.json",
+  "design/carousel-manifest.md",
+  "design/carousel.manifest.json",
+  "design/cantaloupe.design-contracts.json",
+  "design/carousel_example.md",
+];
+
 const MODEL = "claude-opus-4-7";
 
 /** Maximum implement→review rounds per slide before we give up. */
@@ -237,6 +250,39 @@ function insertSlideFeedback(
   );
 }
 
+// ─── Design spec inlining ──────────────────────────────────────────────────
+
+/**
+ * Read every file in DESIGN_SPEC_FILES once and concatenate them into a
+ * single block suitable for embedding in an agent's system prompt. The
+ * Claude Code binary applies ephemeral cache_control to the system
+ * prompt by default — so this big block only costs full input tokens
+ * on the first agent call per run; every subsequent call reads it from
+ * cache at ~10% the price.
+ */
+async function loadDesignSpec(): Promise<string> {
+  const sections = await Promise.all(
+    DESIGN_SPEC_FILES.map(async (rel) => {
+      const text = await readFile(join(REPO_ROOT, rel), "utf8");
+      return `## ${rel}\n\n${text}`;
+    }),
+  );
+  const sep = "==========================================================";
+  return [
+    sep,
+    "EMBEDDED DESIGN SPEC (already in your context — do NOT use the",
+    "Read tool to fetch any of these files; refer to them by section",
+    "heading below).",
+    sep,
+    "",
+    sections.join("\n\n---\n\n"),
+    "",
+    sep,
+    "END EMBEDDED DESIGN SPEC",
+    sep,
+  ].join("\n");
+}
+
 // ─── Implementation agent invocation ───────────────────────────────────────
 
 async function driveAgent(opts: {
@@ -258,7 +304,16 @@ async function driveAgent(opts: {
   });
 
   let resultMessage:
-    | { type: "result"; subtype: string; is_error: boolean }
+    | {
+        type: "result";
+        subtype: string;
+        is_error: boolean;
+        usage?: {
+          input_tokens?: number;
+          cache_read_input_tokens?: number;
+          cache_creation_input_tokens?: number;
+        };
+      }
     | null = null;
   let messageCount = 0;
   // Log every SDK message so a stuck agent is visible in run.log instead of
@@ -280,6 +335,17 @@ async function driveAgent(opts: {
   if (!resultMessage) {
     throw new Error(
       `${opts.label} ended without a result message (got ${messageCount} message(s) total)`,
+    );
+  }
+  // Log usage so we can verify prompt caching is engaging. Big
+  // cache_creation on the first call, big cache_read on every call after.
+  // If cache_read stays 0 across calls, caching isn't working — investigate.
+  const u = resultMessage.usage;
+  if (u) {
+    process.stderr.write(
+      `  [sdk:${opts.label}] usage input=${u.input_tokens ?? 0}` +
+        ` cache_create=${u.cache_creation_input_tokens ?? 0}` +
+        ` cache_read=${u.cache_read_input_tokens ?? 0}\n`,
     );
   }
   if (resultMessage.is_error) {
@@ -564,8 +630,17 @@ async function main() {
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
 
-  const implPrompt = await Bun.file(IMPL_PROMPT_PATH).text();
-  const managerPrompt = await Bun.file(MGR_PROMPT_PATH).text();
+  // Read the design spec ONCE up front and embed it into both agents'
+  // system prompts. This avoids the per-iteration Read-tool round trips
+  // that were burning input-tokens-per-minute and tripping rate limits
+  // on the very first slide. Files stay on disk; the agent just sees
+  // them as context instead of having to fetch them.
+  const designSpec = await loadDesignSpec();
+  log(`Embedded design spec: ${designSpec.length.toLocaleString()} chars`);
+  const implRolePrompt = await Bun.file(IMPL_PROMPT_PATH).text();
+  const managerRolePrompt = await Bun.file(MGR_PROMPT_PATH).text();
+  const implPrompt = `${implRolePrompt}\n\n${designSpec}`;
+  const managerPrompt = `${managerRolePrompt}\n\n${designSpec}`;
 
   let allOk = true;
   for (let i = 0; i < slides.length; i++) {

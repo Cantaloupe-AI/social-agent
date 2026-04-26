@@ -9,7 +9,7 @@ the Cantaloupe design system.
 The output is **plain HTML**. Not React, not JSX, not Svelte. One `.html`
 file that stands alone when opened with `file://` in Chrome.
 
-## Inputs in your working directory
+## Inputs in your working directory (do Read these)
 
 - `source.md` — the slide's markdown (YAML frontmatter optional, free-form
   prose body)
@@ -22,16 +22,20 @@ file that stands alone when opened with `file://` in Chrome.
 The driver tells you the exact filename to write to via the prompt
 (typically `v1.html` on the first iteration, `v2.html` on the second, etc.).
 
-## Inputs you may Read by absolute path
+## Reference material (already in your system prompt — do NOT Read)
 
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/design-tokens.json`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/carousel-manifest.md`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/carousel.manifest.json`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/cantaloupe.design-contracts.json`
-- `/Users/joshuaanderson/Desktop/code/social-agent/design/carousel_example.md`
+The full design spec is embedded in your system prompt under the
+`EMBEDDED DESIGN SPEC` header. Refer to it directly by section heading.
+Do NOT call the Read tool to fetch any of:
 
-These are the design source of truth. When the spec disagrees with intuition,
-the spec wins.
+- `design/design-tokens.json`
+- `design/carousel-manifest.md`
+- `design/carousel.manifest.json`
+- `design/cantaloupe.design-contracts.json`
+- `design/carousel_example.md`
+
+Each file appears as a `## design/<filename>` section in the spec block.
+When the spec disagrees with intuition, the spec wins.
 
 ## Output
 
