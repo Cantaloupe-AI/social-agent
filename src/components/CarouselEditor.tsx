@@ -31,6 +31,14 @@ interface CarouselEditorProps {
   carouselId: string;
   label: string;
   onRename: (nextLabel: string) => Promise<void>;
+  /**
+   * Persist new per-carousel model overrides for the bun driver's two
+   * agents. Pass `null` to revert to the driver's `DEFAULT_MODEL`.
+   */
+  onUpdateModels: (
+    implModel: string | null,
+    managerModel: string | null,
+  ) => Promise<void>;
   onBack: () => void;
   /**
    * Called when this carousel has an active or just-started run. The parent
@@ -40,12 +48,26 @@ interface CarouselEditorProps {
   onGenerationActive: (carousel: Carousel) => void;
 }
 
+/**
+ * Selectable models for the impl + manager agents. Kept in sync with the
+ * driver's `DEFAULT_MODEL` fallback in `scripts/generate-carousel.ts` —
+ * the DB stores NULL for "use the default" rather than materializing the
+ * literal string, so changing the default is a one-line edit there.
+ */
+const MODEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "claude-opus-4-7", label: "Opus 4.7" },
+  { value: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+];
+
+const DEFAULT_MODEL_VALUE = "claude-opus-4-7";
+
 const SAVE_DEBOUNCE_MS = 400;
 
 export function CarouselEditor({
   carouselId,
   label,
   onRename,
+  onUpdateModels,
   onBack,
   onGenerationActive,
 }: CarouselEditorProps) {
@@ -178,6 +200,16 @@ export function CarouselEditor({
   }
   const [carouselPdfPath, setCarouselPdfPath] = useState<string | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
+  // Per-carousel model overrides + status. Loaded from the carousel row on
+  // mount; updated optimistically when the user changes a dropdown. Status
+  // drives the dropdowns' disabled state — during a run the editor is
+  // normally swapped out to <GenerationProgressView>, but this guards the
+  // brief window before the parent flips view, and a status fetch race.
+  const [implModel, setImplModel] = useState<string | null>(null);
+  const [managerModel, setManagerModel] = useState<string | null>(null);
+  const [carouselStatus, setCarouselStatus] = useState<Carousel["status"]>(
+    "idle",
+  );
 
   // Keep a valid active tab as slides change.
   useEffect(() => {
@@ -200,6 +232,9 @@ export function CarouselEditor({
       .then((c) => {
         if (cancelled || !c) return;
         setCarouselPdfPath(c.pdf_path);
+        setImplModel(c.impl_model);
+        setManagerModel(c.manager_model);
+        setCarouselStatus(c.status);
         if (c.status === "generating") onGenerationActive(c);
       })
       .catch((e: unknown) => {
@@ -217,6 +252,33 @@ export function CarouselEditor({
     setActiveId(s.id);
   }
 
+  // Optimistically update local state, persist via the parent. On failure
+  // the parent hook re-fetches the list (revert), so we re-pull our own
+  // copy from getCarousel to stay consistent.
+  async function changeImplModel(next: string) {
+    const prev = implModel;
+    setImplModel(next);
+    try {
+      await onUpdateModels(next, managerModel);
+    } catch (e: unknown) {
+      console.error("cantalog: changeImplModel failed", e);
+      setImplModel(prev);
+      setGenError(`Could not update impl model: ${String(e)}`);
+    }
+  }
+
+  async function changeManagerModel(next: string) {
+    const prev = managerModel;
+    setManagerModel(next);
+    try {
+      await onUpdateModels(implModel, next);
+    } catch (e: unknown) {
+      console.error("cantalog: changeManagerModel failed", e);
+      setManagerModel(prev);
+      setGenError(`Could not update manager model: ${String(e)}`);
+    }
+  }
+
   async function startGeneration() {
     setGenError(null);
     if (slides.length === 0) {
@@ -232,6 +294,7 @@ export function CarouselEditor({
       const c = await getCarousel(carouselId);
       if (c) {
         setCarouselPdfPath(c.pdf_path);
+        setCarouselStatus(c.status);
         onGenerationActive(c);
       } else {
         setGenError("Generation started, but carousel disappeared from db.");
@@ -261,6 +324,18 @@ export function CarouselEditor({
             {slideCount} {slideCount === 1 ? "slide" : "slides"}
           </p>
         </div>
+        <ModelSelect
+          label="Impl"
+          value={implModel ?? DEFAULT_MODEL_VALUE}
+          onChange={(v) => void changeImplModel(v)}
+          disabled={carouselStatus === "generating"}
+        />
+        <ModelSelect
+          label="Manager"
+          value={managerModel ?? DEFAULT_MODEL_VALUE}
+          onChange={(v) => void changeManagerModel(v)}
+          disabled={carouselStatus === "generating"}
+        />
         {carouselPdfPath && (
           <Button
             variant="outline"
@@ -822,5 +897,43 @@ function SlideMarkdownPreview({ source }: { source: string }) {
         {source}
       </ReactMarkdown>
     </div>
+  );
+}
+
+/**
+ * Compact native `<select>` styled to sit next to the toolbar buttons.
+ * Native is intentional: there's no shadcn Select primitive in
+ * `src/components/ui/` yet and the dropdowns are A/B testing UI, not a
+ * polished surface. Adding a new shadcn dep just for this would violate
+ * the project's tight-deps convention (see CLAUDE.md `<dependencies>`).
+ */
+function ModelSelect({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+      <span>{label}</span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={`${label} model`}
+        className="h-8 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {MODEL_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

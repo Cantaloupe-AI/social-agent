@@ -72,6 +72,18 @@ export async function deleteCarousel(id: string): Promise<void> {
   await call<void>("delete_carousel", { id });
 }
 
+export async function updateCarouselModels(
+  id: string,
+  implModel: string | null,
+  managerModel: string | null,
+): Promise<void> {
+  await call<void>("update_carousel_models", {
+    id,
+    implModel,
+    managerModel,
+  });
+}
+
 export async function listSlides(carouselId: string): Promise<Slide[]> {
   return call<Slide[]>("list_slides", { carouselId });
 }

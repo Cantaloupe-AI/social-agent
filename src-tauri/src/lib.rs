@@ -20,6 +20,7 @@ pub fn run() {
             commands::create_carousel,
             commands::rename_carousel,
             commands::delete_carousel,
+            commands::update_carousel_models,
             commands::list_slides,
             commands::create_slide,
             commands::update_slide_content,

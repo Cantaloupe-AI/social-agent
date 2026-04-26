@@ -95,6 +95,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     ensure_column(conn, "carousels", "run_dir", "TEXT")?;
     ensure_column(conn, "carousels", "run_started_at", "TEXT")?;
     ensure_column(conn, "carousels", "run_finished_at", "TEXT")?;
+    // Per-carousel model overrides for the bun driver's two agents. NULL
+    // means "use the driver's DEFAULT_MODEL" — see scripts/generate-carousel.ts.
+    ensure_column(conn, "carousels", "impl_model", "TEXT")?;
+    ensure_column(conn, "carousels", "manager_model", "TEXT")?;
 
     ensure_column(
         conn,
@@ -266,7 +270,7 @@ fn parse_rfc3339(s: &str) -> Result<DateTime<Utc>> {
 }
 
 const CAROUSEL_COLUMNS: &str =
-    "id, label, slug, status, pdf_path, run_dir, run_started_at, run_finished_at, created_at, updated_at";
+    "id, label, slug, status, pdf_path, run_dir, run_started_at, run_finished_at, created_at, updated_at, impl_model, manager_model";
 
 fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
     let id: String = row.get(0)?;
@@ -279,6 +283,8 @@ fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
     let run_finished_at: Option<String> = row.get(7)?;
     let created_at: String = row.get(8)?;
     let updated_at: String = row.get(9)?;
+    let impl_model: Option<String> = row.get(10)?;
+    let manager_model: Option<String> = row.get(11)?;
     let parse_dt = |s: &str| {
         DateTime::parse_from_rfc3339(s)
             .map(|d| d.with_timezone(&Utc))
@@ -305,6 +311,8 @@ fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
         run_finished_at: parse_dt_opt(run_finished_at)?,
         created_at: parse_dt(&created_at)?,
         updated_at: parse_dt(&updated_at)?,
+        impl_model,
+        manager_model,
     })
 }
 
@@ -359,6 +367,43 @@ pub fn rename_carousel(conn: &Connection, id: &str, new_label: &str) -> Result<(
         params![id, new_label, now],
     )
     .context("renaming carousel")?;
+    Ok(())
+}
+
+/// Set or clear the per-carousel model overrides.
+///
+/// `None` (or whitespace-only `Some`) clears the column to NULL — meaning
+/// "use the driver's DEFAULT_MODEL". Same trim/empty→NULL pattern as
+/// `update_slide_title` so that an empty string from the UI doesn't lock
+/// in a literal-empty model id.
+pub fn update_carousel_models(
+    conn: &Connection,
+    id: &str,
+    impl_model: Option<&str>,
+    manager_model: Option<&str>,
+) -> Result<()> {
+    fn normalize(s: Option<&str>) -> Option<String> {
+        s.and_then(|t| {
+            let trimmed = t.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+    }
+    let impl_norm = normalize(impl_model);
+    let manager_norm = normalize(manager_model);
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE carousels
+        SET impl_model = ?2, manager_model = ?3, updated_at = ?4
+        WHERE id = ?1
+        "#,
+        params![id, impl_norm, manager_norm, now],
+    )
+    .context("updating carousel models")?;
     Ok(())
 }
 
@@ -1258,5 +1303,38 @@ mod tests {
             params![s.id],
         );
         assert!(res.is_err(), "CHECK constraint should reject unknown slide status");
+    }
+
+    #[test]
+    fn carousel_models_default_null_and_roundtrip() {
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "modeled").unwrap();
+        // Default: NULL/None for both models — driver falls back to DEFAULT_MODEL.
+        assert!(c.impl_model.is_none());
+        assert!(c.manager_model.is_none());
+
+        update_carousel_models(
+            &conn,
+            &c.id,
+            Some("claude-sonnet-4-6"),
+            Some("claude-opus-4-7"),
+        )
+        .unwrap();
+        let after = get_carousel(&conn, &c.id).unwrap().unwrap();
+        assert_eq!(after.impl_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(after.manager_model.as_deref(), Some("claude-opus-4-7"));
+
+        // Empty / whitespace strings normalize back to NULL (auto-default).
+        update_carousel_models(&conn, &c.id, Some(""), Some("   ")).unwrap();
+        let cleared = get_carousel(&conn, &c.id).unwrap().unwrap();
+        assert!(cleared.impl_model.is_none());
+        assert!(cleared.manager_model.is_none());
+
+        // None also clears to NULL.
+        update_carousel_models(&conn, &c.id, Some("claude-opus-4-7"), Some("claude-opus-4-7")).unwrap();
+        update_carousel_models(&conn, &c.id, None, None).unwrap();
+        let none_cleared = get_carousel(&conn, &c.id).unwrap().unwrap();
+        assert!(none_cleared.impl_model.is_none());
+        assert!(none_cleared.manager_model.is_none());
     }
 }

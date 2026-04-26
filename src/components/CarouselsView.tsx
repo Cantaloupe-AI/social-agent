@@ -8,7 +8,8 @@ import { useCarousels } from "@/hooks/useCarousels";
 import type { Carousel } from "@/lib/types";
 
 export function CarouselsView() {
-  const { carousels, loading, error, create, rename, remove } = useCarousels();
+  const { carousels, loading, error, create, rename, remove, updateModels } =
+    useCarousels();
   const [editingId, setEditingId] = useState<string | null>(null);
   // When set, takes over the screen with the run-progress view. We keep
   // editingId set behind it so closing the progress view returns to the
@@ -35,6 +36,9 @@ export function CarouselsView() {
         carouselId={editingId}
         label={editing?.label ?? ""}
         onRename={(next) => rename(editingId, next)}
+        onUpdateModels={(impl, manager) =>
+          updateModels(editingId, impl, manager)
+        }
         onBack={() => setEditingId(null)}
         onGenerationActive={setProgressCarousel}
       />

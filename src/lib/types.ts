@@ -52,6 +52,14 @@ export interface Carousel {
   run_finished_at: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Per-carousel model overrides for the bun driver's two agents.
+   * `null` means "use the driver's DEFAULT_MODEL" — the literal default
+   * string is intentionally not materialized in the DB so the default
+   * can change in one place (`scripts/generate-carousel.ts`).
+   */
+  impl_model: string | null;
+  manager_model: string | null;
 }
 
 export interface Slide {

@@ -5,6 +5,7 @@ import {
   deleteCarousel as deleteCarouselCmd,
   listCarousels,
   renameCarousel as renameCarouselCmd,
+  updateCarouselModels as updateCarouselModelsCmd,
 } from "@/lib/tauri";
 
 export interface UseCarouselsResult {
@@ -15,6 +16,11 @@ export interface UseCarouselsResult {
   create: (label: string) => Promise<Carousel>;
   rename: (id: string, label: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  updateModels: (
+    id: string,
+    implModel: string | null,
+    managerModel: string | null,
+  ) => Promise<void>;
 }
 
 export function useCarousels(): UseCarouselsResult {
@@ -96,5 +102,59 @@ export function useCarousels(): UseCarouselsResult {
     }
   }, []);
 
-  return { carousels, loading, error, refresh, create, rename, remove };
+  const updateModels = useCallback(
+    async (
+      id: string,
+      implModel: string | null,
+      managerModel: string | null,
+    ) => {
+      // Mirror the Rust normalization: empty / whitespace strings reset to
+      // null (auto-default). Keeps the optimistic local state in sync with
+      // what `update_carousel_models` will actually persist.
+      const implNorm = implModel?.trim() ? implModel.trim() : null;
+      const managerNorm = managerModel?.trim() ? managerModel.trim() : null;
+      setCarousels((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                impl_model: implNorm,
+                manager_model: managerNorm,
+                updated_at: new Date().toISOString(),
+              }
+            : c,
+        ),
+      );
+      try {
+        await updateCarouselModelsCmd(id, implNorm, managerNorm);
+        setError(null);
+      } catch (e: unknown) {
+        console.error("cantalog: updateCarouselModels failed", e);
+        setError(String(e));
+        // Revert by re-fetching authoritative state.
+        try {
+          const xs = await listCarousels();
+          setCarousels(xs);
+        } catch (refreshErr) {
+          console.error(
+            "cantalog: refetch after failed updateModels also failed",
+            refreshErr,
+          );
+        }
+        throw e;
+      }
+    },
+    [],
+  );
+
+  return {
+    carousels,
+    loading,
+    error,
+    refresh,
+    create,
+    rename,
+    remove,
+    updateModels,
+  };
 }

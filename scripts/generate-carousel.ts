@@ -47,7 +47,12 @@ const DESIGN_SPEC_FILES = [
   "design/carousel_example.md",
 ];
 
-const MODEL = "claude-opus-4-7";
+/**
+ * Fallback model id when a carousel row's `impl_model` / `manager_model`
+ * is NULL. The DB intentionally stores NULL rather than this literal,
+ * so changing the default is a one-line edit here — no migration.
+ */
+const DEFAULT_MODEL = "claude-opus-4-7";
 
 /** Maximum implement→review rounds per slide before we give up. */
 const MAX_ITERS = 4;
@@ -59,6 +64,9 @@ interface CarouselRow {
   label: string;
   slug: string | null;
   status: string;
+  /** NULL = use DEFAULT_MODEL. Same on manager_model. */
+  impl_model: string | null;
+  manager_model: string | null;
 }
 
 interface SlideRow {
@@ -81,7 +89,7 @@ function openDb(): Database {
 function loadCarousel(db: Database, id: string): CarouselRow {
   const row = db
     .query<CarouselRow, [string]>(
-      "SELECT id, label, slug, status FROM carousels WHERE id = ?",
+      "SELECT id, label, slug, status, impl_model, manager_model FROM carousels WHERE id = ?",
     )
     .get(id);
   if (!row) throw new Error(`Carousel ${id} not found`);
@@ -291,11 +299,13 @@ async function driveAgent(opts: {
   prompt: string;
   allowedTools: string[];
   label: string;
+  /** Model id passed through to the SDK. Caller resolves NULL → DEFAULT_MODEL. */
+  model: string;
 }): Promise<void> {
   const q = query({
     prompt: opts.prompt,
     options: {
-      model: MODEL,
+      model: opts.model,
       cwd: opts.cwd,
       systemPrompt: opts.systemPrompt,
       permissionMode: "auto",
@@ -396,6 +406,7 @@ async function runImplementer(opts: {
   systemPrompt: string;
   iterationFeedback: string | null;
   prevHtmlFilename: string | null;
+  model: string;
 }): Promise<void> {
   const promptParts = [
     `Working directory: ${opts.slideDir}`,
@@ -420,6 +431,7 @@ async function runImplementer(opts: {
     prompt: promptParts.join("\n\n"),
     allowedTools: ["Read", "Write", "Edit"],
     label: "Implementation agent",
+    model: opts.model,
   });
 }
 
@@ -433,6 +445,7 @@ async function runManager(opts: {
   versionFilename: string; // v{N}.html
   screenshotFilename: string; // v{N}.png
   systemPrompt: string;
+  model: string;
 }): Promise<ManagerVerdict> {
   const reviewPath = join(opts.slideDir, "review.json");
   await rm(reviewPath, { force: true });
@@ -449,6 +462,7 @@ async function runManager(opts: {
     prompt,
     allowedTools: ["Read", "Write"],
     label: "Manager agent",
+    model: opts.model,
   });
 
   if (!existsSync(reviewPath)) {
@@ -483,9 +497,21 @@ async function generateSlide(opts: {
   runDir: string;
   implPrompt: string;
   managerPrompt: string;
+  implModel: string;
+  managerModel: string;
   log: (line: string) => void;
 }) {
-  const { db, slide, slideIndex, runDir, implPrompt, managerPrompt, log } = opts;
+  const {
+    db,
+    slide,
+    slideIndex,
+    runDir,
+    implPrompt,
+    managerPrompt,
+    implModel,
+    managerModel,
+    log,
+  } = opts;
   const slideFolderName = `${String(slideIndex).padStart(2, "0")}-${slide.id}`;
   const slideDir = join(runDir, "slides", slideFolderName);
   await mkdir(slideDir, { recursive: true });
@@ -551,6 +577,7 @@ async function generateSlide(opts: {
       systemPrompt: implPrompt,
       iterationFeedback: lastFeedback,
       prevHtmlFilename: prevHtmlFilename,
+      model: implModel,
     });
     if (!existsSync(htmlPath)) {
       throw new Error(`Implementation agent did not write ${htmlFilename}`);
@@ -570,6 +597,7 @@ async function generateSlide(opts: {
       versionFilename: htmlFilename,
       screenshotFilename: pngFilename,
       systemPrompt: managerPrompt,
+      model: managerModel,
     });
     insertSlideFeedback(db, version.id, verdict.accepted, verdict.feedback);
 
@@ -627,8 +655,15 @@ async function main() {
     process.stderr.write(`${line}\n`);
   };
 
+  // Resolve per-carousel model overrides. NULL falls back to DEFAULT_MODEL —
+  // the literal default lives only here (not in the DB) so changing it is
+  // a one-line edit.
+  const implModel = carousel.impl_model || DEFAULT_MODEL;
+  const managerModel = carousel.manager_model || DEFAULT_MODEL;
+
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
+  log(`Models: impl=${implModel}, manager=${managerModel}`);
 
   // Read the design spec ONCE up front and embed it into both agents'
   // system prompts. This avoids the per-iteration Read-tool round trips
@@ -654,6 +689,8 @@ async function main() {
         runDir,
         implPrompt,
         managerPrompt,
+        implModel,
+        managerModel,
         log,
       });
       log(`✓ slide ${i + 1} done`);

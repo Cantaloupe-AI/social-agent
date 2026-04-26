@@ -104,6 +104,22 @@ pub async fn delete_carousel(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn update_carousel_models(
+    id: String,
+    impl_model: Option<String>,
+    manager_model: Option<String>,
+) -> Result<(), String> {
+    let conn = open_db()?;
+    crate::db::update_carousel_models(
+        &conn,
+        &id,
+        impl_model.as_deref(),
+        manager_model.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn list_slides(carousel_id: String) -> Result<Vec<Slide>, String> {
     let conn = open_db()?;
     crate::db::list_slides(&conn, &carousel_id).map_err(|e| e.to_string())

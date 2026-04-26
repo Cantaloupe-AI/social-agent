@@ -127,6 +127,14 @@ pub struct Carousel {
     pub run_finished_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Model id for the implementation agent. `None` means "use the
+    /// driver's `DEFAULT_MODEL`" — we deliberately don't materialize
+    /// the default string in the DB so changing it later is a one-line
+    /// edit rather than a migration.
+    pub impl_model: Option<String>,
+    /// Model id for the manager (review) agent. Same `None` semantics
+    /// as `impl_model`.
+    pub manager_model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
