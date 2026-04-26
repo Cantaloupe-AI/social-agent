@@ -73,12 +73,6 @@ export function CarouselEditor({
     id: string;
     position: "before" | "after";
   } | null>(null);
-  // Debug-only: last hover signal regardless of whether we acted on it.
-  const [lastDragoverDebug, setLastDragoverDebug] = useState<{
-    targetId: string;
-    position: "before" | "after";
-    count: number;
-  } | null>(null);
   const slidesRef = useRef(slides);
   // Keep latest `slides` reachable from the document-level pointer
   // handlers (which capture state at pointerdown time) without forcing
@@ -119,7 +113,6 @@ export function CarouselEditor({
     e.stopPropagation();
     setEditingTitleId(null);
     setDraggingId(slideId);
-    setLastDragoverDebug(null);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "grabbing";
 
@@ -143,18 +136,9 @@ export function CarouselEditor({
     const onMove = (ev: PointerEvent) => {
       const hit = findTabUnderPointer(ev.clientX, ev.clientY);
       if (!hit) return;
+      if (hit.id === slideId) return; // hovering the source — no commit
       const position: "before" | "after" =
         ev.clientY < hit.rect.top + hit.rect.height / 2 ? "before" : "after";
-      // Diagnostics: track every move regardless of source/target.
-      setLastDragoverDebug((prev) => ({
-        targetId: hit.id,
-        position,
-        count:
-          prev?.targetId === hit.id && prev.position === position
-            ? prev.count + 1
-            : 1,
-      }));
-      if (hit.id === slideId) return; // hovering the source — no commit
       setDropTarget((prev) =>
         prev?.id === hit.id && prev.position === position
           ? prev
@@ -170,7 +154,6 @@ export function CarouselEditor({
       document.body.style.cursor = "";
       setDraggingId(null);
       setDropTarget(null);
-      setLastDragoverDebug(null);
     };
 
     const onUp = (ev: PointerEvent) => {
@@ -330,33 +313,8 @@ export function CarouselEditor({
           orientation="vertical"
           value={activeId ?? undefined}
           onValueChange={setActiveId}
-          className="min-h-[320px] relative"
+          className="min-h-[320px]"
         >
-          {/* Live drag-state debug strip. Visible only while a drag is in
-              flight; tells us whether the drag started, which slide is
-              the drop target, and which half of it. Remove once the
-              ordering UX is stable. */}
-          {draggingId && (
-            <div className="absolute left-40 top-0 z-30 rounded-md bg-amber-100 dark:bg-amber-900/95 text-amber-900 dark:text-amber-100 text-[10px] font-mono px-2 py-1 ring-1 ring-amber-400 shadow-md max-w-[300px] whitespace-nowrap">
-              <div>dragging: {draggingId.slice(0, 8)}…</div>
-              <div>
-                <span className="text-emerald-500">commit:</span>{" "}
-                {dropTarget
-                  ? `${dropTarget.id.slice(0, 8)}… (${dropTarget.position})`
-                  : "—"}
-              </div>
-              <div>
-                <span className="text-blue-400">last hover:</span>{" "}
-                {lastDragoverDebug
-                  ? `${lastDragoverDebug.targetId.slice(0, 8)}… (${lastDragoverDebug.position}) ×${lastDragoverDebug.count}`
-                  : "— (no dragover yet)"}
-              </div>
-              <div className="text-amber-300/70 mt-0.5">
-                If "last hover" shows your own slide id only, you need to
-                move the cursor *onto another tab*.
-              </div>
-            </div>
-          )}
           <TabsList>
             {slides.map((s, i) => (
               <SlideTabTrigger
@@ -712,38 +670,23 @@ function SlideTabTrigger({
     // walker looks up via document.elementFromPoint().closest(). Without
     // this, drag detection breaks.
     <div className="relative w-full" data-slide-id={slide.id}>
-      {/* Drop bars: oversized + lime so they're visible against the dark
-          theme. Bumped from 4px to 8px after the first round didn't show. */}
+      {/* Drop indicator: a single thin white line at the insert point. */}
       {dropIndicator === "before" && (
         <div
           aria-hidden
-          className="pointer-events-none absolute left-0 right-0 -top-1 h-2 rounded-full bg-lime-400 ring-2 ring-lime-200 shadow-lg shadow-lime-500/50 z-20"
+          className="pointer-events-none absolute left-1 right-1 -top-px h-px bg-white z-20"
         />
       )}
       {dropIndicator === "after" && (
         <div
           aria-hidden
-          className="pointer-events-none absolute left-0 right-0 -bottom-1 h-2 rounded-full bg-lime-400 ring-2 ring-lime-200 shadow-lg shadow-lime-500/50 z-20"
-        />
-      )}
-      {/* Translucent half-tab overlay: shows the drop zone, not just the
-          boundary line. */}
-      {dropIndicator === "before" && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-lime-400/20 z-10 rounded-t-md"
-        />
-      )}
-      {dropIndicator === "after" && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-lime-400/20 z-10 rounded-b-md"
+          className="pointer-events-none absolute left-1 right-1 -bottom-px h-px bg-white z-20"
         />
       )}
       <TabsTrigger
         value={slide.id}
         className={`group/tab w-full justify-between gap-1 ${
-          isDragging ? "opacity-40 ring-2 ring-amber-400" : ""
+          isDragging ? "opacity-40" : ""
         }`}
         title={visibleTitle}
       >
