@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 
 import { CarouselEditor } from "@/components/CarouselEditor";
 import { GenerationProgressView } from "@/components/GenerationProgressView";
@@ -8,8 +8,16 @@ import { useCarousels } from "@/hooks/useCarousels";
 import type { Carousel } from "@/lib/types";
 
 export function CarouselsView() {
-  const { carousels, loading, error, create, rename, remove, updateModels } =
-    useCarousels();
+  const {
+    carousels,
+    loading,
+    error,
+    create,
+    rename,
+    remove,
+    duplicate,
+    updateModels,
+  } = useCarousels();
   const [editingId, setEditingId] = useState<string | null>(null);
   // When set, takes over the screen with the run-progress view. We keep
   // editingId set behind it so closing the progress view returns to the
@@ -151,6 +159,27 @@ export function CarouselsView() {
               >
                 {c.label}
               </button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Duplicate ${c.label}`}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => {
+                  // Hook surfaces failures via its `error` state (visible
+                  // in the banner above) AND console.errors. We catch
+                  // here only to swallow the unhandled-rejection warning
+                  // — log a debug breadcrumb so the catch is visible, not
+                  // silent (CLAUDE.md §conventions/errors).
+                  void duplicate(c.id).catch((e: unknown) => {
+                    console.debug(
+                      "cantalog: duplicate rejected (already surfaced via hook)",
+                      e,
+                    );
+                  });
+                }}
+              >
+                <Copy className="size-3.5" />
+              </Button>
               <Button
                 variant="ghost"
                 size="icon-sm"

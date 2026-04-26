@@ -413,6 +413,132 @@ pub fn delete_carousel(conn: &Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Duplicate a carousel and its slides into a fresh carousel row.
+///
+/// Behaviour:
+/// - Label: `"{source.label} copy"`. If that's already taken (UNIQUE
+///   constraint would fail) we append the first 4 chars of the source
+///   id: `"{source.label} copy {abcd}"`. If that *also* collides, error
+///   out — at that point the user is intentionally cloning the same
+///   carousel many times and should rename one of them first.
+/// - Slug: regenerated from the new label via the existing `unique_slug`
+///   helper. Starts fresh; we don't carry the source's slug.
+/// - Run state: `status = 'idle'`, `pdf_path`, `run_dir`, `run_started_at`,
+///   `run_finished_at` all start NULL. The duplicate gets a clean run
+///   history.
+/// - Models: `impl_model` and `manager_model` ARE copied (the user is
+///   most likely cloning to retry-with-tweaks; preserving model picks
+///   matches that intent).
+/// - Slides: each source slide becomes a new row with a fresh uuid,
+///   preserving `order_index`, `content`, and `title`. `status` resets
+///   to `'idle'` and `last_error` to NULL.
+/// - `slide_versions` and `slide_feedback` are NOT copied. The duplicate
+///   gets a clean run history; the prior accepted PDFs would point at
+///   the source carousel's run directories anyway.
+///
+/// All writes happen inside a single transaction so a partial failure
+/// rolls back cleanly — we never leave a half-duplicated carousel.
+pub fn duplicate_carousel(conn: &mut Connection, id: &str) -> Result<Carousel> {
+    let new_id = Uuid::new_v4().to_string();
+    {
+        let tx = conn.transaction().context("starting duplicate transaction")?;
+        let now = Utc::now().to_rfc3339();
+
+        // 1. Load the source carousel (Transaction derefs to Connection).
+        let source = get_carousel(&tx, id)?
+            .ok_or_else(|| anyhow!("carousel {id} not found"))?;
+
+        // 2. Compose a non-colliding label.
+        let primary_label = format!("{} copy", source.label);
+        let exists = |label: &str, tx: &rusqlite::Transaction<'_>| -> Result<bool> {
+            let count: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM carousels WHERE label = ?1",
+                    params![label],
+                    |r| r.get(0),
+                )
+                .context("checking duplicate label collision")?;
+            Ok(count > 0)
+        };
+        let new_label = if !exists(&primary_label, &tx)? {
+            primary_label
+        } else {
+            let suffix: String = source.id.chars().take(4).collect();
+            let fallback_label = format!("{} copy {}", source.label, suffix);
+            if exists(&fallback_label, &tx)? {
+                return Err(anyhow!(
+                    "could not pick a non-colliding label for duplicate of {id}; \
+                     rename an existing copy and try again"
+                ));
+            }
+            fallback_label
+        };
+
+        // 3. Slug from the new label, scoped against the existing slugs.
+        let base = slugify(&new_label);
+        let base = if base.is_empty() { "carousel".to_string() } else { base };
+        let new_slug = unique_slug(&tx, &base, None)?;
+
+        // 4. Insert the new carousel, copying model overrides only.
+        tx.execute(
+            r#"
+            INSERT INTO carousels
+                (id, label, slug, status, pdf_path, run_dir, run_started_at,
+                 run_finished_at, impl_model, manager_model, created_at, updated_at)
+            VALUES (?1, ?2, ?3, 'idle', NULL, NULL, NULL, NULL, ?4, ?5, ?6, ?6)
+            "#,
+            params![
+                new_id,
+                new_label,
+                new_slug,
+                source.impl_model,
+                source.manager_model,
+                now
+            ],
+        )
+        .context("inserting duplicate carousel")?;
+
+        // 5. Copy slides, preserving order_index/content/title only. New
+        //    uuids; status resets to 'idle'.
+        let mut stmt = tx
+            .prepare(
+                "SELECT order_index, content, title FROM slides \
+                 WHERE carousel_id = ?1 ORDER BY order_index ASC",
+            )
+            .context("preparing slide copy scan")?;
+        let rows = stmt
+            .query_map(params![id], |row| {
+                let order_index: i64 = row.get(0)?;
+                let content: String = row.get(1)?;
+                let title: Option<String> = row.get(2)?;
+                Ok((order_index, content, title))
+            })
+            .context("scanning source slides")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("collecting source slides")?;
+        drop(stmt);
+
+        for (order_index, content, title) in rows {
+            let slide_id = Uuid::new_v4().to_string();
+            tx.execute(
+                r#"
+                INSERT INTO slides
+                    (id, carousel_id, order_index, content, title, status,
+                     last_error, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, 'idle', NULL, ?6, ?6)
+                "#,
+                params![slide_id, new_id, order_index, content, title, now],
+            )
+            .context("inserting duplicated slide")?;
+        }
+
+        tx.commit().context("committing duplicate transaction")?;
+    }
+
+    get_carousel(conn, &new_id)?
+        .ok_or_else(|| anyhow!("duplicate carousel disappeared after insert"))
+}
+
 pub fn set_carousel_status(
     conn: &Connection,
     id: &str,
@@ -1303,6 +1429,88 @@ mod tests {
             params![s.id],
         );
         assert!(res.is_err(), "CHECK constraint should reject unknown slide status");
+    }
+
+    #[test]
+    fn duplicate_carousel_copies_slides_and_clears_run_state() {
+        let mut conn = open_in_memory().unwrap();
+        let src = create_carousel(&conn, "Source").unwrap();
+        update_carousel_models(
+            &conn,
+            &src.id,
+            Some("claude-sonnet-4-6"),
+            Some("claude-opus-4-7"),
+        )
+        .unwrap();
+        // Pretend a run finished on the source so we can verify the
+        // duplicate doesn't carry the run state over.
+        set_carousel_run_started(&conn, &src.id, "/tmp/run-1").unwrap();
+        set_carousel_run_finished(
+            &conn,
+            &src.id,
+            CarouselStatus::Done,
+            Some("/tmp/run-1/source.pdf"),
+        )
+        .unwrap();
+
+        let s1 = create_slide(&conn, &src.id).unwrap();
+        update_slide_content(&conn, &s1.id, "first").unwrap();
+        update_slide_title(&conn, &s1.id, Some("Hello")).unwrap();
+        let s2 = create_slide(&conn, &src.id).unwrap();
+        update_slide_content(&conn, &s2.id, "second").unwrap();
+        let s3 = create_slide(&conn, &src.id).unwrap();
+        update_slide_content(&conn, &s3.id, "third").unwrap();
+        // A version + feedback row that should NOT carry over.
+        let v = insert_slide_version(&conn, &s1.id, "/tmp/v1.html").unwrap();
+        insert_slide_feedback(&conn, &v.id, true, "lgtm").unwrap();
+
+        let dup = duplicate_carousel(&mut conn, &src.id).unwrap();
+        assert_eq!(dup.label, "Source copy");
+        assert_ne!(dup.id, src.id);
+        assert_eq!(dup.status, CarouselStatus::Idle);
+        assert!(dup.pdf_path.is_none(), "pdf_path must reset");
+        assert!(dup.run_dir.is_none(), "run_dir must reset");
+        assert!(dup.run_started_at.is_none(), "run_started_at must reset");
+        assert!(dup.run_finished_at.is_none(), "run_finished_at must reset");
+        assert_eq!(dup.impl_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(dup.manager_model.as_deref(), Some("claude-opus-4-7"));
+        // Slug must be fresh, not reused from source.
+        assert!(dup.slug.is_some());
+        assert_ne!(dup.slug, src.slug);
+
+        let dup_slides = list_slides(&conn, &dup.id).unwrap();
+        assert_eq!(dup_slides.len(), 3);
+        assert_eq!(dup_slides[0].order_index, 0);
+        assert_eq!(dup_slides[0].content, "first");
+        assert_eq!(dup_slides[0].title.as_deref(), Some("Hello"));
+        assert_eq!(dup_slides[0].status, SlideStatus::Idle);
+        assert!(dup_slides[0].last_error.is_none());
+        assert_eq!(dup_slides[1].content, "second");
+        assert_eq!(dup_slides[2].content, "third");
+        // Slide ids are fresh — not reused from the source.
+        let src_ids: std::collections::HashSet<_> = list_slides(&conn, &src.id)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.id)
+            .collect();
+        for d in &dup_slides {
+            assert!(!src_ids.contains(&d.id), "slide id must be fresh");
+        }
+        // No slide_versions or slide_feedback for any duplicated slide.
+        for d in &dup_slides {
+            assert!(
+                list_slide_versions(&conn, &d.id).unwrap().is_empty(),
+                "duplicate slides must have no carried-over versions"
+            );
+        }
+        // Source slide_versions still intact (we didn't damage them).
+        assert_eq!(list_slide_versions(&conn, &s1.id).unwrap().len(), 1);
+
+        // A second duplicate should append the id-suffix to dodge the
+        // unique-label constraint that "Source copy" now occupies.
+        let dup2 = duplicate_carousel(&mut conn, &src.id).unwrap();
+        assert!(dup2.label.starts_with("Source copy "));
+        assert_ne!(dup2.label, dup.label);
     }
 
     #[test]

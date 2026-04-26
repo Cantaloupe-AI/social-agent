@@ -72,6 +72,10 @@ export async function deleteCarousel(id: string): Promise<void> {
   await call<void>("delete_carousel", { id });
 }
 
+export async function duplicateCarousel(id: string): Promise<Carousel> {
+  return call<Carousel>("duplicate_carousel", { id });
+}
+
 export async function updateCarouselModels(
   id: string,
   implModel: string | null,

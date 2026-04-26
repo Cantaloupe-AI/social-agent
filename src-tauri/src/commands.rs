@@ -104,6 +104,12 @@ pub async fn delete_carousel(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn duplicate_carousel(id: String) -> Result<Carousel, String> {
+    let mut conn = open_db()?;
+    crate::db::duplicate_carousel(&mut conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn update_carousel_models(
     id: String,
     impl_model: Option<String>,

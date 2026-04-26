@@ -3,6 +3,7 @@ import type { Carousel } from "@/lib/types";
 import {
   createCarousel as createCarouselCmd,
   deleteCarousel as deleteCarouselCmd,
+  duplicateCarousel as duplicateCarouselCmd,
   listCarousels,
   renameCarousel as renameCarouselCmd,
   updateCarouselModels as updateCarouselModelsCmd,
@@ -16,6 +17,7 @@ export interface UseCarouselsResult {
   create: (label: string) => Promise<Carousel>;
   rename: (id: string, label: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  duplicate: (id: string) => Promise<Carousel>;
   updateModels: (
     id: string,
     implModel: string | null,
@@ -102,6 +104,22 @@ export function useCarousels(): UseCarouselsResult {
     }
   }, []);
 
+  const duplicate = useCallback(async (id: string): Promise<Carousel> => {
+    try {
+      const c = await duplicateCarouselCmd(id);
+      // Prepend the new row to match the `create` action's pattern. The
+      // returned carousel comes back fully populated from Rust so we
+      // don't need a list refetch.
+      setCarousels((prev) => [c, ...prev]);
+      setError(null);
+      return c;
+    } catch (e: unknown) {
+      console.error("cantalog: duplicateCarousel failed", e);
+      setError(String(e));
+      throw e;
+    }
+  }, []);
+
   const updateModels = useCallback(
     async (
       id: string,
@@ -155,6 +173,7 @@ export function useCarousels(): UseCarouselsResult {
     create,
     rename,
     remove,
+    duplicate,
     updateModels,
   };
 }
