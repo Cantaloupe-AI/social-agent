@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Hippo project-memory store (machine-local, regenerable; binary db +
+# embeddings churn on every write — keep it out of history)
+.hippo/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
