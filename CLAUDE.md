@@ -115,6 +115,16 @@
     <cmd purpose="bundle">bun run vite build</cmd>
     <cmd purpose="debug_app">bun run tauri build --debug</cmd>
   </commands>
+  <generation_model>
+    For any TEST or CHECK carousel generation (verifying a rebrand, the
+    pipeline, a contract change — anything that is not a real deliverable),
+    use `claude-sonnet-4-6` for BOTH agents (implementation AND manager). The
+    per-carousel default is opus×2 (`claude-opus-4-7`), which is correct for
+    real output but too slow/expensive for test runs (Opus thinking blocks +
+    SDK rate-limit backoff push a 5-slide check past 30 min). Set impl_model
+    and manager_model to sonnet on the carousel before `cantalog-cli generate`
+    for these runs. Opus×2 only for genuine deliverables.
+  </generation_model>
   <ui_testing_gap>
     Playwright is not installed and not on the approved deps list. UI smoke
     tests are manual — see the checklist at the bottom of STATUS.md. Do not add

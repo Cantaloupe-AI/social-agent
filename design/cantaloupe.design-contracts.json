@@ -1,0 +1,241 @@
+{
+  "$description": "Validation rules for happycampr carousel rendering. A renderer MUST fail the build on any contract violation. Companion to carousel.manifest.json and design-tokens.json. Filename intentionally unchanged (code + CLAUDE.md reference `cantaloupe.design-contracts.json`); the brand is happycampr. Colour/logo values resolve via design-tokens.json; four-colour-palette compromises are logged in design/ambiguous.md §13.",
+  "safeZones": {
+    "$description": "Hard minimums in pixels. Violating produces the 'AI slop' look.",
+    "shape-to-rule": {
+      "minPx": 40,
+      "applies": "Any decorative shape edge to any hairline rule"
+    },
+    "text-to-rule": {
+      "minPx": 24,
+      "applies": "Text descender bottom to any rule. Must add descender depth (see descenderFormula)."
+    },
+    "shape-to-text": {
+      "minPx": 32,
+      "applies": "Edge-to-edge between a shape and a text block"
+    },
+    "text-to-text": {
+      "minPx": 16,
+      "applies": "Between adjacent text blocks of the same semantic group (headline → body)"
+    },
+    "group-to-group": {
+      "minPx": 48,
+      "applies": "Between semantically distinct groups (caption → code block)"
+    }
+  },
+  "lineHeight": {
+    "$description": "Floors to prevent ascender/descender collision in Inter.",
+    "title": {
+      "min": 1.05,
+      "applies": "Multi-line headlines at title or title-sm size"
+    },
+    "display": {
+      "min": 1.0,
+      "minMultiLine": 1.0,
+      "allowed": 0.95,
+      "allowedCondition": "single-line OR descender-bearing letters (g, j, p, q, y) fall on the last line only"
+    }
+  },
+  "descenderFormula": {
+    "$description": "Minimum baseline-to-rule clearance for text sitting above a rule.",
+    "formula": "clearance = safeZones['text-to-rule'] + (fontSize * 0.22)",
+    "example": {
+      "fontSize": 104,
+      "clearance": 47,
+      "derivation": "24 + (104 * 0.22) = 24 + 22.88 = 46.88 ≈ 47"
+    }
+  },
+  "color": {
+    "maxChromaticPerSlide": 2,
+    "chromaticColors": ["primary", "secondary", "warning", "complement"],
+    "nonChromatic": ["ink", "ink-dim", "surface", "surface-inverse"],
+    "warningFullChroma": {
+      "hex": "#946334",
+      "allowedOn": ["shapes"],
+      "replacementForText": {
+        "hex": "#946334",
+        "token": "warning-text"
+      },
+      "$note": "happycampr has no amber. warning + warning-text both map to graham (#946334), which is WCAG AA body / AAA large on marshmallow. See design/ambiguous.md §13.1."
+    },
+    "complementReservedFor": ["code-numbers", "rare-emphasis"],
+    "$paletteNote": "happycampr is four flat colours. chromaticColors resolve to graham (primary/warning) + moss (secondary); complement collapses to burnt/ink. Only two truly chromatic colours exist — honour the contrast rule: never Burnt-on-Moss or Graham-on-Moss for text. See design/ambiguous.md §13.",
+    "chartPlotAreaException": "The chart plot area of a plate-chart slide is exempt from maxChromaticPerSlide and may use the ordered chart.seriesPalette. The rest of the slide — and all axis/label text — still obeys this rule and stays ink/ink-dim. See #chart.plotAreaChromaticException."
+  },
+  "shapes": {
+    "maxPerPlate": 1,
+    "maxOnCover": 2,
+    "coverCombination": {
+      "primary": "circle-center",
+      "accent": "dot-accent"
+    },
+    "allowedKinds": [
+      "circle-center",
+      "circle-right",
+      "bar-left",
+      "bar-right-small",
+      "triangle-tr",
+      "square-tr",
+      "dot-accent"
+    ],
+    "dotAccent": {
+      "usage": "cover-only"
+    }
+  },
+  "grid": {
+    "baselineSnapPx": 8,
+    "applies": "All vertical positions (baselines, rule y-coords, shape top/bottom) must be multiples of 8"
+  },
+  "headline": {
+    "alignment": "flush-left",
+    "forbiddenAlignments": ["center", "right", "justify"],
+    "maxAccentsPerHeadline": 2,
+    "manualLineBreaks": true,
+    "autoWrapIsBug": true
+  },
+  "body": {
+    "alignment": "flush-left",
+    "maxColumnPx": {
+      "vertical": 620,
+      "landscape": 720
+    },
+    "twoColumnLandscape": {
+      "$description": "Optional editorial two-column body for landscape body plates. When used, both columns must be the same width (720), share a 96 px gutter, and align to the same baseline grid. Title plates and code plates do NOT use this — they remain single-column.",
+      "width": 720,
+      "gutter": 96,
+      "count": 2
+    },
+    "emphasisStyle": "italic",
+    "forbiddenEmphasisStyle": "bold"
+  },
+  "caption": {
+    "style": "italic",
+    "color": "ink-dim",
+    "sizePx": 14,
+    "maxColumnPx": 520,
+    "position": "below-body-only"
+  },
+  "code": {
+    "font": "jetbrains-mono",
+    "maxColumnPx": {
+      "vertical": 720,
+      "landscape": 1100
+    },
+    "leftRule": {
+      "weightPx": 2,
+      "color": "primary"
+    },
+    "indentFromRulePx": 24
+  },
+  "fonts": {
+    "allowed": ["Inter", "JetBrains Mono"],
+    "forbidden": "any other family"
+  },
+  "stylesheets": {
+    "$description": "External-resource allow-list. Slide HTML is otherwise self-contained (inline <style>). Only these may be linked; external JavaScript is always forbidden.",
+    "allowed": [
+      "Google Fonts (https://fonts.googleapis.com/...)",
+      "https://cdn.jsdelivr.net/npm/charts.css@1.2.0/dist/charts.min.css"
+    ],
+    "chartsCssPinnedVersion": "1.2.0",
+    "forbidden": "any other external CSS; any external JavaScript; any unpinned or non-jsDelivr Charts.css URL",
+    "rejectIf": [
+      "Any <script src=...> or inline <script> → fail",
+      "Any external stylesheet that is not Google Fonts or the pinned Charts.css URL → fail",
+      "Charts.css linked without the @1.2.0 version pin (floating tag) → fail"
+    ]
+  },
+  "chart": {
+    "$description": "Hard rules for plate-chart slides. Engine is Charts.css (pure CSS). Enumerated mirror of carousel-manifest.md §12a and carousel.manifest.json#chart.",
+    "engine": {
+      "required": "charts.css",
+      "rejectIf": [
+        "Chart drawn with inline <svg> or <canvas> instead of a Charts.css <table> → fail",
+        "Any JavaScript used to build, populate, or animate the chart → fail",
+        "Charts.css stylesheet missing, unpinned, or from a non-approved origin → fail (see #stylesheets)"
+      ]
+    },
+    "structure": {
+      "element": "table.charts-css",
+      "requires": [
+        "thead with <th scope=\"col\"> headers",
+        "tbody with <tr> rows, each leading with <th scope=\"row\">",
+        "one <td> per series carrying an inline --size in 0..1"
+      ],
+      "multiSeriesClass": "multiple"
+    },
+    "families": ["column", "bar", "line", "area", "pie"],
+    "fallbackWhenNoFamilyFits": "plate-list",
+    "box": {
+      "$description": "The chart <table> bounding box must fit inside the active orientation's contentArea, which is already inset 40 px from the rules, so shape-to-rule is auto-satisfied. With a headline, the top of the box is >= headlineGapPx below the headline's last line.",
+      "mustFitWithin": "orientations.{vertical|landscape}.grid.contentArea",
+      "headlineGapPx": 48,
+      "snapPx": 8
+    },
+    "seriesPalette": ["primary", "warning", "secondary", "complement"],
+    "maxSeries": 6,
+    "plotAreaChromaticException": {
+      "$description": "The chart plot area is the one documented exception to color.maxChromaticPerSlide. Do NOT reject a multi-series chart for using >2 chromatic colors inside the plot area, provided every series color comes from seriesPalette in order. The rest of the slide and all axis/label text still obey color.maxChromaticPerSlide.",
+      "appliesTo": "chart plot area only"
+    },
+    "axis": {
+      "lineColors": ["ink", "ink-dim"],
+      "maxLineWeightPx": 1,
+      "labelFont": "Inter",
+      "labelColors": ["ink", "ink-dim"],
+      "minLabelPx": 14
+    },
+    "spacingSnapPx": 8,
+    "forbiddenComponents": ["3d", "animation", "motion", "tooltip", "show-data-on-hover"],
+    "rejectIf": [
+      "Series color not from seriesPalette, or palette order skipped → fail",
+      "Chart box overflows the contentArea, or any box edge off the 8 px grid → fail",
+      "Axis/grid line not ink/ink-dim, or thicker than 1 px → fail",
+      "Axis or data label below 14 px, or not Inter, or not ink/ink-dim → fail",
+      "More than 6 series → fail",
+      "Any forbidden Charts.css component (3D, animation/motion, tooltip, hover-only data) → fail",
+      "Charts.css default palette/spacing left un-overridden (off-brand) → fail"
+    ]
+  },
+  "branding": {
+    "$description": "happycampr is currently the only brand. Theming is future work — see carousel.manifest.json#branding.themingFutureWork. Every slide must include the header logo.",
+    "headerLogo": {
+      "required": true,
+      "assetFilename": "happycampr-logo.svg",
+      "position": {
+        "top": 24,
+        "leftEqualsMarginX": true,
+        "$note": "Top in px is fixed at 24 in both orientations because chrome is type-driven. Left equals the orientation's `marginX` (96 vertical / 128 landscape)."
+      },
+      "size": {
+        "heightPx": 24,
+        "widthPx": 118,
+        "preserveAspectRatio": true,
+        "$note": "happycampr lockup native viewBox 1080×220 (aspect 54:11). At 24px height the width is 24 × 1080/220 ≈ 118 px (was 132 for the Cantaloupe 160:29 lockup). See design/ambiguous.md §13.5."
+      },
+      "minClearanceToTopRulePx": 8,
+      "rejectIf": [
+        "Logo missing or broken (img 404, no src) → fail",
+        "Logo placed somewhere other than top-left header slot → fail",
+        "Logo height > 32 px or < 16 px (must be 24 with native aspect) → fail",
+        "Logo bottom edge less than 8 px above topRule → fail",
+        "Color-shifted logo (inverted, recolored, traced) → fail; the happycampr burnt/marshmallow lockup SVG is canonical"
+      ]
+    }
+  },
+  "pageCount": {
+    "min": 3,
+    "max": 10
+  },
+  "canvas": {
+    "$description": "Per-orientation hard dimensions. Renderer fails if body width/height for the active orientation does not match exactly.",
+    "vertical": {
+      "requiredWidth": 1080,
+      "requiredHeight": 1350
+    },
+    "landscape": {
+      "requiredWidth": 1920,
+      "requiredHeight": 1080
+    }
+  }
+}
