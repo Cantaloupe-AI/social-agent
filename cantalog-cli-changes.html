@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cantalog-cli — change review</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --ink:#e6edf3;
+    --muted:#9aa7b4; --line:#2d333b; --accent:#3fb950; --accent2:#58a6ff;
+    --warn:#d29922; --crit:#f85149; --chip:#21262d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 24px 96px}
+  h1{font-size:30px;margin:0 0 4px;letter-spacing:-.02em}
+  h2{font-size:21px;margin:46px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:26px 0 8px}
+  p{margin:10px 0}
+  code,pre{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+  code{background:var(--chip);padding:1.5px 6px;border-radius:5px;font-size:13px}
+  pre{background:#010409;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow:auto;font-size:12.5px;line-height:1.55}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .grid{display:grid;gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .tldr{background:linear-gradient(180deg,#13241a,#0f1a13);border:1px solid #1f6f3a}
+  .tldr h2{border:0;margin:0 0 10px;color:#7ee493}
+  .pill{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;
+    padding:3px 9px;border-radius:999px;text-transform:uppercase}
+  .ok{background:rgba(63,185,80,.15);color:#56d364;border:1px solid rgba(63,185,80,.4)}
+  .crit{background:rgba(248,81,73,.15);color:#ff7b72;border:1px solid rgba(248,81,73,.4)}
+  .high{background:rgba(210,153,34,.16);color:#e3b341;border:1px solid rgba(210,153,34,.45)}
+  .med{background:rgba(88,166,255,.14);color:#79c0ff;border:1px solid rgba(88,166,255,.4)}
+  .low{background:rgba(154,167,180,.14);color:#b9c2cc;border:1px solid rgba(154,167,180,.35)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  tr:last-child td{border-bottom:0}
+  .mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  .flag{background:#2a1f0c;border:1px solid #6b4e16;border-radius:12px;padding:16px 20px;margin:16px 0}
+  .flag b{color:#e3b341}
+  .win{background:#0f2017;border:1px solid #1f6f3a;border-radius:12px;padding:16px 20px;margin:16px 0}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 16px;font-size:13.5px}
+  .kv div:nth-child(odd){color:var(--muted)}
+  .foot{color:var(--muted);font-size:12px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+  a{color:var(--accent2)}
+  .tag{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-left:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>cantalog-cli — change review</h1>
+  <p class="sub">Scriptable CLI over the carousel generation pipeline · uncommitted on <code>main</code> · reviewed by 3 red-team agents · generated end-to-end live</p>
+
+  <div class="card tldr">
+    <h2>Read this first — the 4 things that matter</h2>
+    <ol style="margin:6px 0 0;padding-left:20px">
+      <li><b>It works end-to-end.</b> The CLI generated a real carousel through the live agent loop (OAuth) → <code>cli-e2e-verify-v1.pdf</code>, accepted on iteration 1. Opened in Preview.</li>
+      <li><b>A regression was caught &amp; fixed.</b> Adding a 2nd binary broke <code>tauri build</code> ("failed to find main binary"). Fixed with <code>default-run="cantalog"</code>; verified by a full <code>tauri build --debug</code> that bundled the .app + dmg. <code>cargo&nbsp;test</code> alone did <i>not</i> surface it.</li>
+      <li><b>Red team found 2 HIGH + several MED/LOW. All actioned.</b> Code-fixed the real ones (unclosed-fence data loss, finalize invariant, <code>--detach</code> safety). The rest are documented-with-rationale, not silently ignored.</li>
+      <li><b>Commit hygiene — your call.</b> The working tree mixes <i>pre-existing</i> uncommitted orientation work with this CLI work. Recommend <b>two commits</b> (see §Commit hygiene).</li>
+    </ol>
+  </div>
+
+  <h2>What changed</h2>
+  <p>Goal: a scriptable surface over the exact pipeline the Tauri app uses, so the agent loop is testable and other agents can drive it — without the UI.</p>
+  <div class="grid">
+    <div class="card">
+      <h3>1 · Behavior-preserving refactor <span class="tag">no app behavior change</span></h3>
+      <p>The Tauri-free core of <code>generate_carousel_pdf</code> was extracted from <code>commands.rs</code> into a new <code>generation.rs</code> (<code>prepare_run</code> / <code>spawn_driver</code> / <code>finalize</code> + run-dir naming + log tee). The Tauri command keeps only the in-memory process map + watcher (the UI-cancel concern) and calls the shared core. <b>Run-dir naming and the crash-finalize safety net now live in exactly one place</b> — required by the repo's error conventions. <code>commands.rs</code>: −294 / +64 lines.</p>
+    </div>
+    <div class="card">
+      <h3>2 · New <code>cantalog-cli</code> binary <span class="tag">create · import · generate · status · open</span></h3>
+      <p>A second <code>[[bin]]</code> in the same crate. Thin <code>clap</code> parser → pure, unit-tested handlers in <code>cli.rs</code> (incl. a deck-markdown parser that splits on <code># Slide …</code> blocks). Headless: it supervises the bun driver, streams logs, opens the PDF. Reads/writes the same <code>db.sqlite</code> as the app (a CLI carousel shows up in the UI and vice-versa).</p>
+    </div>
+    <div class="card">
+      <h3>3 · The <code>tauri build</code> regression — caught &amp; fixed</h3>
+      <div class="flag" style="margin:8px 0 0">
+        <b>Why it mattered:</b> a 2nd <code>[[bin]]</code> with no <code>package.default-run</code> makes <code>tauri build</code> fail with <span class="mono">failed to find main binary</span>. <code>cargo test</code>/<code>check</code>/<code>build</code> all stayed green (they build every bin), so a partial verification missed it. Fixed with <code>default-run = "cantalog"</code>, then verified by a complete <code>tauri build --debug</code> that produced <code>Cantalog.app</code> + the dmg. Lesson recorded in STATUS.md.
+      </div>
+    </div>
+  </div>
+
+  <h2>Files</h2>
+  <table>
+    <tr><th>File</th><th>Δ</th><th>What</th></tr>
+    <tr><td class="mono">src-tauri/src/generation.rs</td><td>new · 571 L</td><td>Shared Tauri-free generation core + 9 tests</td></tr>
+    <tr><td class="mono">src-tauri/src/cli.rs</td><td>new · 801 L</td><td>CLI handlers + deck parser + 19 tests</td></tr>
+    <tr><td class="mono">src-tauri/src/bin/cantalog-cli.rs</td><td>new · 324 L</td><td>clap wrapper (formatting + exit codes only)</td></tr>
+    <tr><td class="mono">src-tauri/src/commands.rs</td><td>−294 / +64</td><td>Delegates to <code>generation::*</code>; commands unchanged</td></tr>
+    <tr><td class="mono">src-tauri/src/lib.rs</td><td>+2</td><td><code>pub mod generation; pub mod cli;</code></td></tr>
+    <tr><td class="mono">src-tauri/Cargo.toml</td><td>+~16</td><td><code>[[bin]]</code>, <code>default-run</code>, <code>clap</code> (+ rationale)</td></tr>
+    <tr><td class="mono">tests/fixtures/deck/example.md</td><td>new</td><td>5-slide deck w/ fenced-code edge case</td></tr>
+    <tr><td class="mono">STATUS.md · README.md · CLAUDE.md</td><td>edited</td><td>CLI surface, limitations, the regression, honest test counts</td></tr>
+  </table>
+  <p class="sub" style="margin-top:6px">Also in the working tree but <b>not</b> part of this work: <code>db.rs</code>, <code>types.rs</code>, several <code>src/components/*</code>, <code>scripts/*</code>, <code>prompts/*</code> — pre-existing uncommitted "per-carousel orientation/model" feature. See §Commit hygiene.</p>
+
+  <h2>Red-team review — 3 adversarial agents</h2>
+  <p>One per surface: Rust core, CLI/parser/security, build/regression/docs. Findings &amp; what was done:</p>
+  <table>
+    <tr><th>Sev</th><th>Finding</th><th>Resolution</th></tr>
+    <tr><td><span class="pill high">High</span></td>
+      <td><b>Unclosed fenced code block silently swallowed following <code># Slide</code> headings</b> — <code>import</code> would create 1 slide instead of N, no error.</td>
+      <td><span class="pill ok">Fixed</span> <code>parse_deck</code> now errors on an unterminated fence. Test added; verified via CLI (exit 1 + clear message).</td></tr>
+    <tr><td><span class="pill high">High</span></td>
+      <td><b><code>--detach</code> caveats</b> — run.log tee dies with the CLI process (stale log tail); a hard-crashed bun is unsupervised.</td>
+      <td><span class="pill ok">Removed</span> <code>--detach</code> deleted entirely — degraded for no real benefit (an async caller can background the blocking command). <code>generate</code> is now always blocking + supervised end-to-end. Code + docs updated.</td></tr>
+    <tr><td><span class="pill med">Med</span></td>
+      <td><b><code>finalize_run</code> skipped the <code>[exit]</code> line + DB safety net</b> if <code>default_base_dir()</code> failed — broke the original "log-first, always finalize" invariant.</td>
+      <td><span class="pill ok">Fixed</span> <code>finalize</code> now takes <code>Option&lt;&amp;Path&gt;</code>, writes <code>[exit]</code> first unconditionally on every path, notes a skipped DB net. Test added.</td></tr>
+    <tr><td><span class="pill med">Med</span></td>
+      <td><b>Mismatched fence markers</b> (<code>~~~</code> vs <code>```</code>) cross-toggled, mis-splitting slides.</td>
+      <td><span class="pill ok">Fixed</span> Fence now matched by its opening marker (CommonMark). Test added.</td></tr>
+    <tr><td><span class="pill med">Med</span></td>
+      <td><b>Prompt-injection threat model</b> — slide text reaches the design agent (Read/Write/Edit in the run dir).</td>
+      <td><span class="pill med">Documented</span> Local-only, single-user, self-authored tool. STATUS.md + README + <code>--help</code>: don't <code>import</code> deck files you didn't write. Pre-existing app property; sandboxing the agent's write paths is out of scope.</td></tr>
+    <tr><td><span class="pill low">Low</span></td>
+      <td><code>spawn_driver</code> is <code>pub</code> with no script-exists guard (footgun if called directly).</td>
+      <td><span class="pill ok">Fixed</span> Guard added; cleanup de-duplicated into one <code>mark_run_failed</code> helper.</td></tr>
+    <tr><td><span class="pill low">Low</span></td>
+      <td><code>clap</code> in global <code>[dependencies]</code> could mislead a future <code>cargo audit</code> reviewer.</td>
+      <td><span class="pill med">Documented</span> Verified (<code>strings</code>) that clap is dead-code-eliminated from the shipped app binary. Cargo.toml comment now states this explicitly.</td></tr>
+    <tr><td><span class="pill low">Low</span></td>
+      <td>Misleading <code>requires="file"</code>; <code>--log 0</code> = "all" undocumented; a <code>== false</code> test smell; preamble-drop only in a code comment.</td>
+      <td><span class="pill ok">Fixed</span> All four cleaned up (annotation removed, help text, <code>assert!(!…)</code>, doc-comment).</td></tr>
+    <tr><td><span class="pill low">Low</span></td>
+      <td><code>cmd_open</code> exists()/open TOCTOU.</td>
+      <td><span class="pill low">Accepted</span> Local tool; <code>open(1)</code> fails gracefully. Cosmetic only (reviewer concurred).</td></tr>
+  </table>
+  <p><b>No CRITICAL findings.</b> Build/regression agent confirmed: all 24 Tauri commands present &amp; unchanged, IPC in sync, docs accurate, clap correctly scoped.</p>
+
+  <div class="flag">
+    <b>⚑ Action for you — Commit hygiene (red team, Medium)</b><br>
+    The working tree bundles two independent workstreams: the <b>pre-existing per-carousel orientation/model feature</b> (<code>db.rs</code>, <code>types.rs</code>, <code>src/components/*</code>, <code>scripts/*</code>, <code>prompts/*</code>) and <b>this CLI work</b> (<code>generation.rs</code>, <code>cli.rs</code>, <code>bin/</code>, <code>Cargo.*</code>). They're functionally separable. Recommended: commit them as <b>two conventional commits</b> for clean <code>git bisect</code>/rollback —
+    e.g. <code>feat(carousels): per-carousel orientation</code> then <code>feat(cli): cantalog-cli + generation core extraction</code>. Nothing is committed yet; this is your decision.
+  </div>
+
+  <h2>Verification — full matrix green</h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td><code>cargo test</code></td><td><span class="pill ok">81 passed</span> 0 failed · 0 ignored (generation 9 + cli 19 new; rest pre-existing)</td></tr>
+    <tr><td><code>cargo check --all-targets</code></td><td><span class="pill ok">0 warnings / 0 errors</span></td></tr>
+    <tr><td><code>bun run tsc --noEmit</code></td><td><span class="pill ok">clean</span></td></tr>
+    <tr><td><code>bun run vitest run</code></td><td><span class="pill ok">25 passed</span></td></tr>
+    <tr><td><code>bun run vite build</code></td><td><span class="pill ok">built</span> (pre-existing chunk-size advisory only)</td></tr>
+    <tr><td><code>bun run tauri build --debug</code></td><td><span class="pill ok">Cantalog.app + dmg bundled</span> ← the check that caught the regression</td></tr>
+    <tr><td>CLI smoke (temp HOME)</td><td><span class="pill ok">pass</span> create/import/slide/list/status/open; unclosed-fence rejected (exit 1)</td></tr>
+  </table>
+
+  <div class="card win">
+    <h3 style="margin-top:0">✅ Live end-to-end proof</h3>
+    <div class="kv">
+      <div>Command</div><div class="mono">cantalog-cli import --new --file … &amp;&amp; cantalog-cli generate &lt;id&gt;</div>
+      <div>Auth</div><div>Claude Code OAuth (no API key in env — picked up automatically)</div>
+      <div>Pipeline</div><div>Implementation agent → puppeteer render → Manager agent → <b>accepted iter 1</b></div>
+      <div>Result</div><div><span class="pill ok">status: done</span> · slide accepted · <code>cli-e2e-verify-v1.pdf</code> (29&nbsp;KB)</div>
+      <div>Path</div><div class="mono">…/cantalog/carousels/cli-e2e-verify/run-1/cli-e2e-verify-v1.pdf</div>
+    </div>
+  </div>
+
+  <h2>Using the CLI</h2>
+<pre>cd src-tauri
+cargo run -q --bin cantalog-cli -- &lt;cmd&gt;        # or: cargo build --release --bin cantalog-cli
+
+cantalog-cli carousel create --label "Launch" [--orientation vertical|landscape]
+cantalog-cli carousel list
+cantalog-cli slide add &lt;id&gt; --file s.md            # or --stdin / --content "…"  [--title T]
+cantalog-cli import --new --file deck.md           # splits on `# Slide …` blocks
+cantalog-cli import --carousel &lt;id&gt; --file deck.md # append to an existing carousel
+cantalog-cli generate &lt;id&gt;                         # blocks, streams logs, opens the PDF
+cantalog-cli status &lt;id&gt; [--log 40] [--watch]
+cantalog-cli open &lt;id&gt;</pre>
+
+  <h2>Caveats to know (documented in STATUS.md)</h2>
+  <ul>
+    <li><b>Cross-process cancel</b> is out of scope — the app's cancel uses an in-memory map. Ctrl-C on a blocking <code>generate</code> is the supported cancel; re-running self-heals a stuck state.</li>
+    <li><b>No <code>--detach</code></b> — it was built then removed (dead run.log + unsupervised). <code>generate</code> is always blocking + supervised; background it at the shell for async use.</li>
+    <li><b>Untrusted decks</b>: slide text is fed to the design agent. Only <code>import</code> deck files you wrote/reviewed.</li>
+    <li>The real agent loop is intentionally not unit-tested (network/cost/minutes); its pieces are. Covered by the live E2E above.</li>
+  </ul>
+
+  <p class="foot">Generated for pre-commit review · Cantalog · nothing committed — working tree only.
+  Red team: 3 parallel adversarial agents (Sonnet). This file is at the repo root and is itself uncommitted; delete it or keep it out of the commit.</p>
+
+</div>
+</body>
+</html>
