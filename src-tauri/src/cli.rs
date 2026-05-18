@@ -286,6 +286,130 @@ pub fn cmd_import(
 }
 
 // ---------------------------------------------------------------------------
+// Chart authoring (plate-chart) + kitchen-sink deck
+// ---------------------------------------------------------------------------
+
+/// The Charts.css families `plate-chart` supports — mirror of
+/// `design/carousel.manifest.json#chart.families`. Data that fits none of
+/// these must fall back to `plate-list` per the design contracts; the CLI
+/// only scaffolds the supported set.
+pub const CHART_FAMILIES: [&str; 5] = ["column", "bar", "line", "area", "pie"];
+
+/// Roman numeral for folio chrome (`N / TOTAL`, see manifest §4). General
+/// enough for any deck size; deck sizes are 3..=10 in practice.
+fn roman(mut n: usize) -> String {
+    const TABLE: [(usize, &str); 13] = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"),
+        (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"),
+        (5, "V"), (4, "IV"), (1, "I"),
+    ];
+    let mut s = String::new();
+    for (v, sym) in TABLE {
+        while n >= v {
+            s.push_str(sym);
+            n -= v;
+        }
+    }
+    s
+}
+
+/// The `chart:`-block body for each family (everything after the heading +
+/// `folio:` line). Authoring schema mirrors
+/// `design/carousel_example.md` → "Reference — plate-chart". Series are
+/// capped at two because happycampr is a two-chromatic palette
+/// (graham + moss); see `design/ambiguous.md` §13.
+fn family_body(family: &str) -> &'static str {
+    match family {
+        "column" => {
+            "headline: |\n  Signups keep\n  {{accent:climbing}}.\nchart:\n  \
+             family: column\n  axis:\n    x: Quarter\n    y: Signups\n    \
+             max: 1200\n  series:\n    - name: 2025\n      color: primary\n      \
+             data: { Q1: 420, Q2: 610, Q3: 780, Q4: 1120 }\n    - name: 2026\n      \
+             color: secondary\n      data: { Q1: 540, Q2: 700, Q3: 910, Q4: 1180 }\n\
+             caption: |\n  Two years, same four quarters.\n"
+        }
+        "bar" => {
+            "headline: |\n  Where signups\n  {{accent:come from}}.\nchart:\n  \
+             family: bar\n  axis:\n    x: Channel\n    y: Signups\n    max: 900\n  \
+             series:\n    - name: Signups\n      color: primary\n      \
+             data: { Referral: 860, Search: 540, Social: 410, Direct: 230, Email: 120 }\n\
+             caption: |\n  Ranked, highest first.\n"
+        }
+        "line" => {
+            "headline: |\n  Retention is\n  {{accent:holding}}.\nchart:\n  \
+             family: line\n  axis:\n    x: Week\n    y: Active %\n    max: 100\n  \
+             series:\n    - name: Cohort A\n      color: primary\n      \
+             data: { W1: 100, W2: 82, W3: 71, W4: 65, W5: 62 }\n    - name: Cohort B\n      \
+             color: secondary\n      data: { W1: 100, W2: 88, W3: 80, W4: 76, W5: 74 }\n\
+             caption: |\n  Percent still active by week.\n"
+        }
+        "area" => {
+            "headline: |\n  Revenue,\n  {{accent:cumulative}}.\nchart:\n  \
+             family: area\n  axis:\n    x: Month\n    y: $K\n    max: 480\n  \
+             series:\n    - name: 2026\n      color: primary\n      \
+             data: { Jan: 40, Feb: 95, Mar: 165, Apr: 250, May: 350, Jun: 470 }\n\
+             caption: |\n  Running total through June.\n"
+        }
+        "pie" => {
+            "headline: |\n  Traffic\n  {{accent:mix}}.\nchart:\n  family: pie\n  \
+             series:\n    - name: Share\n      color: primary\n      \
+             data: { Referral: 46, Search: 28, Social: 18, Direct: 8 }\n\
+             caption: |\n  Share of sessions, last 30 days.\n"
+        }
+        _ => unreachable!("family_body called with unvalidated family"),
+    }
+}
+
+/// Build one ready-to-edit `# Slide N :: plate-chart` block for `family`.
+/// `index`/`total` drive the `folio:` chrome.
+pub fn chart_slide_block(
+    family: &str,
+    index: usize,
+    total: usize,
+) -> Result<String, String> {
+    if !CHART_FAMILIES.contains(&family) {
+        return Err(format!(
+            "unknown chart family '{family}' (expected one of: {})",
+            CHART_FAMILIES.join(", ")
+        ));
+    }
+    let folio = format!("{} / {}", roman(index), roman(total));
+    let body = family_body(family);
+    Ok(format!(
+        "# Slide {index} :: plate-chart\n\nfolio: {folio}\n{body}"
+    ))
+}
+
+/// A complete deck exercising every Charts.css family, one per slide.
+/// Round-trips through [`parse_deck`]; the leading HTML-comment note is
+/// documentary preamble (dropped on import, kept in any `--out` file).
+pub fn kitchen_sink_deck() -> String {
+    let total = CHART_FAMILIES.len();
+    let mut out = String::from(
+        "---\ntitle: Charts Kitchen Sink\nslug: charts-kitchen-sink\n---\n\n\
+         <!-- One plate-chart per Charts.css family. happycampr is a two-\n\
+         chromatic palette (graham + moss), so each demo stays <= 2 series.\n\
+         Edit the data freely, then: cantalog-cli generate <carousel_id>. -->\n",
+    );
+    for (i, fam) in CHART_FAMILIES.iter().enumerate() {
+        out.push('\n');
+        out.push_str(
+            &chart_slide_block(fam, i + 1, total).expect("built-in family is valid"),
+        );
+        out.push('\n');
+    }
+    out
+}
+
+/// Build the kitchen-sink deck and import it via [`cmd_import`].
+pub fn cmd_chart_kitchen_sink(
+    conn: &Connection,
+    target: ImportTarget,
+) -> Result<ImportResult, String> {
+    cmd_import(conn, target, &kitchen_sink_deck())
+}
+
+// ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
 
@@ -692,6 +816,65 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
+    }
+
+    // ---- chart ----------------------------------------------------------
+
+    #[test]
+    fn chart_slide_block_rejects_unknown_family() {
+        let err = chart_slide_block("scatter", 1, 1).unwrap_err();
+        assert!(err.contains("unknown chart family 'scatter'"), "got: {err}");
+        assert!(err.contains("column, bar, line, area, pie"), "got: {err}");
+    }
+
+    #[test]
+    fn chart_slide_block_has_heading_folio_and_family() {
+        let b = chart_slide_block("line", 3, 7).unwrap();
+        assert!(b.starts_with("# Slide 3 :: plate-chart"), "got: {b}");
+        assert!(b.contains("folio: III / VII"), "got: {b}");
+        assert!(b.contains("family: line"), "got: {b}");
+        assert!(b.contains("headline: |"));
+        assert!(b.contains("caption: |"));
+    }
+
+    #[test]
+    fn kitchen_sink_deck_round_trips_one_slide_per_family() {
+        let deck = parse_deck(&kitchen_sink_deck()).expect("parse kitchen sink");
+        assert_eq!(deck.slides.len(), CHART_FAMILIES.len());
+        let fm = deck.front_matter.expect("front matter");
+        assert_eq!(fm.title.as_deref(), Some("Charts Kitchen Sink"));
+        assert_eq!(fm.slug.as_deref(), Some("charts-kitchen-sink"));
+        for (i, fam) in CHART_FAMILIES.iter().enumerate() {
+            let block = &deck.slides[i];
+            assert!(
+                block.starts_with(&format!("# Slide {} :: plate-chart", i + 1)),
+                "slide {i} heading: {block}"
+            );
+            assert!(block.contains(&format!("family: {fam}")), "slide {i} family");
+        }
+        // The documentary HTML-comment preamble is dropped on parse.
+        assert!(!deck.slides[0].contains("<!--"));
+    }
+
+    #[test]
+    fn cmd_chart_kitchen_sink_creates_a_carousel_of_charts() {
+        let base = fresh_base_dir("kitchensink");
+        let conn = open_db(&base).unwrap();
+        let res = cmd_chart_kitchen_sink(
+            &conn,
+            ImportTarget::New {
+                label: None,
+                orientation: Orientation::Vertical,
+            },
+        )
+        .unwrap();
+        assert!(res.created);
+        assert_eq!(res.carousel_label, "Charts Kitchen Sink");
+        assert_eq!(res.slide_count, CHART_FAMILIES.len());
+        let slides = db::list_slides(&conn, &res.carousel_id).unwrap();
+        assert_eq!(slides.len(), CHART_FAMILIES.len());
+        assert!(slides[0].content.contains("family: column"));
+        assert!(slides[4].content.contains("family: pie"));
     }
 
     // ---- status ---------------------------------------------------------

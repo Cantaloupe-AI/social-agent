@@ -45,6 +45,42 @@ enum Command {
     Status(StatusArgs),
     /// Open a carousel's generated PDF with the OS opener.
     Open(OpenArgs),
+    /// Chart helpers: scaffold a plate-chart block, or a kitchen-sink deck.
+    Chart {
+        #[command(subcommand)]
+        action: ChartAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ChartAction {
+    /// Print one ready-to-edit plate-chart slide block to stdout.
+    Scaffold {
+        /// Chart family: column | bar | line | area | pie.
+        #[arg(long)]
+        family: String,
+    },
+    /// Build a deck with one plate-chart per Charts.css family.
+    KitchenSink(KitchenSinkArgs),
+}
+
+#[derive(Args)]
+struct KitchenSinkArgs {
+    /// Import into this existing carousel.
+    #[arg(long, conflicts_with = "new")]
+    carousel: Option<String>,
+    /// Create a new carousel for the deck.
+    #[arg(long)]
+    new: bool,
+    /// Label for the new carousel (falls back to the deck title).
+    #[arg(long)]
+    label: Option<String>,
+    /// Orientation for a new carousel (ignored with --carousel).
+    #[arg(long)]
+    orientation: Option<String>,
+    /// Also write the deck markdown to this file.
+    #[arg(long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -269,6 +305,49 @@ fn run() -> Result<(), String> {
             let path = cli::cmd_open(&conn, &a.carousel_id, cli::os_open)?;
             println!("opened {path}");
         }
+        Command::Chart { action } => match action {
+            ChartAction::Scaffold { family } => {
+                println!("{}", cli::chart_slide_block(&family, 1, 1)?);
+            }
+            ChartAction::KitchenSink(a) => {
+                let KitchenSinkArgs {
+                    carousel,
+                    new,
+                    label,
+                    orientation,
+                    out,
+                } = a;
+                if let Some(ref p) = out {
+                    std::fs::write(p, cli::kitchen_sink_deck())
+                        .map_err(|e| format!("writing {}: {e}", p.display()))?;
+                    println!("wrote deck → {}", p.display());
+                }
+                let target = if let Some(id) = carousel {
+                    Some(ImportTarget::Existing(id))
+                } else if new {
+                    Some(ImportTarget::New {
+                        label,
+                        orientation: cli::resolve_orientation(orientation.as_deref())?,
+                    })
+                } else {
+                    None
+                };
+                if let Some(t) = target {
+                    let conn = cli::open_db(&base_dir()?)?;
+                    let r = cli::cmd_chart_kitchen_sink(&conn, t)?;
+                    println!(
+                        "{} carousel {} (\"{}\") with {} chart slide(s)\n  next: cantalog-cli generate {}",
+                        if r.created { "created" } else { "appended to" },
+                        r.carousel_id,
+                        r.carousel_label,
+                        r.slide_count,
+                        r.carousel_id
+                    );
+                } else if out.is_none() {
+                    print!("{}", cli::kitchen_sink_deck());
+                }
+            }
+        },
     }
     Ok(())
 }
