@@ -1,13 +1,12 @@
+use crate::generation;
 use crate::sources::{claude_code, git};
 use crate::types::{
-    Activity, Carousel, CarouselStatus, Config, Entry, Slide, SlideFeedback, SlideVersion,
+    Activity, Carousel, Config, Entry, Orientation, Slide, SlideFeedback, SlideVersion,
 };
 use chrono::Local;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -86,9 +85,18 @@ pub async fn get_carousel(id: String) -> Result<Option<Carousel>, String> {
 }
 
 #[tauri::command]
-pub async fn create_carousel(label: String) -> Result<Carousel, String> {
+pub async fn create_carousel(
+    label: String,
+    orientation: Option<String>,
+) -> Result<Carousel, String> {
     let conn = open_db()?;
-    crate::db::create_carousel(&conn, &label).map_err(|e| e.to_string())
+    let orientation = match orientation.as_deref() {
+        Some(s) => Orientation::from_str(s)
+            .ok_or_else(|| format!("invalid orientation: {s}"))?,
+        None => Orientation::Vertical,
+    };
+    crate::db::create_carousel_with_orientation(&conn, &label, orientation)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -123,6 +131,17 @@ pub async fn update_carousel_models(
         manager_model.as_deref(),
     )
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_carousel_orientation(
+    id: String,
+    orientation: String,
+) -> Result<(), String> {
+    let conn = open_db()?;
+    let orientation = Orientation::from_str(&orientation)
+        .ok_or_else(|| format!("invalid orientation: {orientation}"))?;
+    crate::db::update_carousel_orientation(&conn, &id, orientation).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -195,125 +214,6 @@ pub struct ProcHandle {
 #[derive(Default)]
 pub struct GenerationProcesses(pub Mutex<HashMap<String, ProcHandle>>);
 
-fn repo_root() -> Result<PathBuf, String> {
-    // CARGO_MANIFEST_DIR is /…/social-agent/src-tauri at build time.
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .map(|p| p.to_path_buf())
-        .ok_or_else(|| "could not resolve repo root from CARGO_MANIFEST_DIR".to_string())
-}
-
-/// Pick the next `run-N` directory under `<base>/carousels/<slug>/`.
-///
-/// We scan the existing entries, take the max numeric suffix, add 1, and
-/// `create_dir` (atomic — fails if it already exists). This is the only
-/// place run-dir naming happens; the bun script just trusts the path it's
-/// given.
-fn next_run_dir(slug: &str) -> Result<PathBuf, String> {
-    let base_dir = crate::config::default_base_dir().map_err(|e| e.to_string())?;
-    let carousel_dir = crate::config::carousels_dir(&base_dir).join(slug);
-    std::fs::create_dir_all(&carousel_dir)
-        .map_err(|e| format!("creating {}: {e}", carousel_dir.display()))?;
-
-    let mut max = 0u32;
-    for entry in std::fs::read_dir(&carousel_dir)
-        .map_err(|e| format!("reading {}: {e}", carousel_dir.display()))?
-    {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let name = entry.file_name();
-        let Some(s) = name.to_str() else { continue };
-        if let Some(rest) = s.strip_prefix("run-") {
-            if let Ok(n) = rest.parse::<u32>() {
-                if n > max {
-                    max = n;
-                }
-            }
-        }
-    }
-    let next = max + 1;
-    let dir = carousel_dir.join(format!("run-{next}"));
-    std::fs::create_dir(&dir).map_err(|e| {
-        format!(
-            "creating run dir {}: {e} (race with another driver?)",
-            dir.display()
-        )
-    })?;
-    Ok(dir)
-}
-
-/// Tee a child pipe into both `run.log` and the parent's stderr,
-/// line-by-line, prefixing each line so the source is unambiguous.
-///
-/// Returning early on a read error is fine — the child has either exited
-/// or its pipe has gone away; the watcher thread will pick that up.
-fn spawn_pipe_tee(
-    label: &'static str,
-    pipe: impl std::io::Read + Send + 'static,
-    log_path: PathBuf,
-) {
-    thread::spawn(move || {
-        let reader = BufReader::new(pipe);
-        for line_res in reader.lines() {
-            let line = match line_res {
-                Ok(l) => l,
-                Err(e) => {
-                    eprintln!("cantalog: pipe-tee[{label}] read error: {e}");
-                    return;
-                }
-            };
-            let stamped = format!(
-                "[{}] [{}] {}\n",
-                chrono::Utc::now().to_rfc3339(),
-                label,
-                line
-            );
-            // Always echo to parent stderr so `tauri dev` shows it inline.
-            eprint!("{stamped}");
-            // And append to the run.log file for the UI to read.
-            match OpenOptions::new().create(true).append(true).open(&log_path) {
-                Ok(mut f) => {
-                    if let Err(e) = f.write_all(stamped.as_bytes()) {
-                        eprintln!(
-                            "cantalog: pipe-tee[{label}] log write failed ({}): {e}",
-                            log_path.display()
-                        );
-                    }
-                }
-                Err(e) => {
-                    eprintln!(
-                        "cantalog: pipe-tee[{label}] log open failed ({}): {e}",
-                        log_path.display()
-                    );
-                }
-            }
-        }
-    });
-}
-
-/// Append a freshly-stamped line to `run.log`. Used by the supervisor
-/// thread to record `[exit]` lines that didn't come through a pipe.
-fn append_log_line(log_path: &Path, line: &str) {
-    let stamped = format!("[{}] {}\n", chrono::Utc::now().to_rfc3339(), line);
-    eprint!("{stamped}");
-    match OpenOptions::new().create(true).append(true).open(log_path) {
-        Ok(mut f) => {
-            if let Err(e) = f.write_all(stamped.as_bytes()) {
-                eprintln!(
-                    "cantalog: append_log_line failed ({}): {e}",
-                    log_path.display()
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!(
-                "cantalog: append_log_line open failed ({}): {e}",
-                log_path.display()
-            );
-        }
-    }
-}
-
 #[tauri::command]
 pub async fn generate_carousel_pdf(
     app: tauri::AppHandle,
@@ -334,111 +234,23 @@ pub async fn generate_carousel_pdf(
         }
     }
 
-    // 2. Sanity-check inputs and pick the run dir up front.
-    let root = repo_root()?;
-    let script = root.join("scripts").join("generate-carousel.ts");
-    if !script.exists() {
-        return Err(format!("driver script not found at {}", script.display()));
-    }
+    // 2. Validate inputs, pick the run dir, and persist run-start state.
+    //    This is the Tauri-free core shared with `cantalog-cli`.
+    let base_dir = crate::config::default_base_dir().map_err(|e| e.to_string())?;
+    let root = generation::repo_root()?;
+    let ctx = generation::prepare_run(&base_dir, &root, &carousel_id)?;
 
-    let conn = open_db()?;
-    let carousel = crate::db::get_carousel(&conn, &carousel_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("carousel {carousel_id} not found"))?;
-    let slug = carousel
-        .slug
-        .clone()
-        .ok_or_else(|| format!("carousel {carousel_id} has no slug — reopen the app once"))?;
-    let slides = crate::db::list_slides(&conn, &carousel_id).map_err(|e| e.to_string())?;
-    if slides.is_empty() {
-        return Err("Carousel has no slides".into());
-    }
-    drop(conn);
+    // 3. Spawn bun. `spawn_driver` tees stdout/stderr into run.log and, on
+    //    spawn failure, marks the carousel failed before returning Err.
+    let child = generation::spawn_driver(
+        &base_dir,
+        &root,
+        &carousel_id,
+        &ctx.run_dir,
+        &ctx.log_path,
+    )?;
 
-    let run_dir = next_run_dir(&slug)?;
-    let log_path = run_dir.join("run.log");
-    append_log_line(
-        &log_path,
-        &format!(
-            "[supervisor] starting bun driver for carousel \"{}\" ({} slide(s))",
-            carousel.label,
-            slides.len()
-        ),
-    );
-
-    // Persist run start so the UI can find run.log immediately, even if bun
-    // crashes before its first DB write. Also reset every slide's status to
-    // 'queued' so the progress UI doesn't show stale ✓/✗ from a prior run
-    // for slides the new driver hasn't reached yet.
-    {
-        let conn = open_db()?;
-        crate::db::set_carousel_run_started(
-            &conn,
-            &carousel_id,
-            run_dir.to_string_lossy().as_ref(),
-        )
-        .map_err(|e| e.to_string())?;
-        crate::db::reset_slides_for_run(&conn, &carousel_id)
-            .map_err(|e| e.to_string())?;
-    }
-
-    // 3. Spawn bun. Rust now owns the run-dir picker; bun just trusts the
-    // path passed as argv[2].
-    let mut child = Command::new("bun")
-        .arg("run")
-        .arg(&script)
-        .arg(&carousel_id)
-        .arg(&run_dir)
-        .current_dir(&root)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            // Mark the carousel failed so the UI doesn't sit on 'generating'.
-            // Per CLAUDE.md §conventions/errors: no silent failures — if the
-            // cleanup itself fails (db locked, disk full, …) we still need the
-            // operator to see why the carousel is stuck.
-            match open_db() {
-                Ok(conn) => {
-                    if let Err(cleanup_err) = crate::db::set_carousel_run_finished(
-                        &conn,
-                        &carousel_id,
-                        CarouselStatus::Failed,
-                        None,
-                    ) {
-                        let msg = format!(
-                            "[supervisor] spawn failed AND failed to mark \
-                             carousel failed during cleanup: {cleanup_err}"
-                        );
-                        eprintln!("{msg}");
-                        append_log_line(&log_path, &msg);
-                    }
-                }
-                Err(open_err) => {
-                    let msg = format!(
-                        "[supervisor] spawn failed AND could not open db to \
-                         mark carousel failed: {open_err}"
-                    );
-                    eprintln!("{msg}");
-                    append_log_line(&log_path, &msg);
-                }
-            }
-            append_log_line(
-                &log_path,
-                &format!("[supervisor] spawn failed: {e}"),
-            );
-            format!("spawning bun driver: {e}")
-        })?;
-
-    // 4. Drain stdout + stderr into run.log (and into our own stderr).
-    if let Some(stdout) = child.stdout.take() {
-        spawn_pipe_tee("bun-stdout", stdout, log_path.clone());
-    }
-    if let Some(stderr) = child.stderr.take() {
-        spawn_pipe_tee("bun-stderr", stderr, log_path.clone());
-    }
-
-    // 5. Park the child in the GenerationProcesses map and start the watcher.
+    // 4. Park the child in the GenerationProcesses map and start the watcher.
     let proc = Arc::new(Mutex::new(Some(child)));
     {
         let state = app.state::<GenerationProcesses>();
@@ -453,7 +265,7 @@ pub async fn generate_carousel_pdf(
 
     let app_handle = app.clone();
     let watcher_carousel_id = carousel_id.clone();
-    let watcher_log_path = log_path.clone();
+    let watcher_log_path = ctx.log_path.clone();
     let watcher_proc = proc.clone();
     thread::spawn(move || {
         // Every exit path from this thread funnels through finalize_run:
@@ -492,10 +304,13 @@ pub async fn generate_carousel_pdf(
 
 /// Single point of cleanup for the supervisor thread.
 ///
-/// Runs unconditionally on every exit path, including the "this can't
-/// happen" branches (mutex poisoning, missing child, try_wait error).
-/// Idempotent: if the carousel is already in a terminal state, this is
-/// a no-op.
+/// Runs unconditionally on every watcher exit path, including the "this
+/// can't happen" branches (mutex poisoning, missing child, try_wait error).
+/// Clears the Tauri-side handle/map so a fresh run can start, then
+/// delegates the DB crash-finalize safety net to `generation::finalize`,
+/// which is the one place that decision lives (shared with the CLI).
+/// Idempotent: if the carousel already reached a terminal state, the DB
+/// half is a no-op.
 fn finalize_run(
     app: &tauri::AppHandle,
     carousel_id: &str,
@@ -503,8 +318,6 @@ fn finalize_run(
     proc: &Arc<Mutex<Option<Child>>>,
     reason: &str,
 ) {
-    append_log_line(log_path, &format!("[supervisor] [exit] {reason}"));
-
     // Drop the Child from the local handle so a fresh run can start.
     match proc.lock() {
         Ok(mut guard) => {
@@ -513,7 +326,7 @@ fn finalize_run(
         Err(e) => {
             let msg = format!("[supervisor] could not clear proc handle: {e}");
             eprintln!("{msg}");
-            append_log_line(log_path, &msg);
+            generation::append_log_line(log_path, &msg);
         }
     }
 
@@ -525,71 +338,28 @@ fn finalize_run(
         Err(e) => {
             let msg = format!("[supervisor] could not remove from process map: {e}");
             eprintln!("{msg}");
-            append_log_line(log_path, &msg);
+            generation::append_log_line(log_path, &msg);
         }
     }
 
-    // ALWAYS check carousel status. If still 'generating', the bun
-    // script didn't get to call set_carousel_run_finished — mark
-    // failed loudly so the UI doesn't sit on a stuck status.
-    let conn = match open_db() {
-        Ok(c) => c,
+    // DB safety net (shared with the CLI): if the bun driver died before
+    // writing a terminal status, flip 'generating' → 'failed'. We ALWAYS
+    // call generation::finalize so the `[exit]` line is written on every
+    // path; if default_base_dir fails (macOS-impossible) we surface it and
+    // pass None so finalize still logs the exit + notes the skipped DB net
+    // — restoring the original "log-first, always finalize" invariant.
+    let base_dir = match crate::config::default_base_dir() {
+        Ok(d) => Some(d),
         Err(e) => {
             let msg = format!(
-                "[supervisor] open_db during finalize failed: {e} \
-                 — carousel status may be stuck"
+                "[supervisor] default_base_dir during finalize failed: {e}"
             );
             eprintln!("{msg}");
-            append_log_line(log_path, &msg);
-            return;
+            generation::append_log_line(log_path, &msg);
+            None
         }
     };
-    let status = match crate::db::get_carousel(&conn, carousel_id) {
-        Ok(Some(c)) => c.status,
-        Ok(None) => {
-            let msg = "[supervisor] carousel disappeared from db";
-            eprintln!("{msg}");
-            append_log_line(log_path, msg);
-            return;
-        }
-        Err(e) => {
-            let msg = format!("[supervisor] get_carousel during finalize: {e}");
-            eprintln!("{msg}");
-            append_log_line(log_path, &msg);
-            return;
-        }
-    };
-    if status == CarouselStatus::Generating {
-        match crate::db::set_carousel_run_finished(
-            &conn,
-            carousel_id,
-            CarouselStatus::Failed,
-            None,
-        ) {
-            Ok(()) => {
-                append_log_line(
-                    log_path,
-                    "[supervisor] marked carousel failed (status was still 'generating')",
-                );
-            }
-            Err(e) => {
-                let msg = format!(
-                    "[supervisor] FAILED to mark carousel failed: {e} \
-                     — UI will show 'generating' until manually fixed"
-                );
-                eprintln!("{msg}");
-                append_log_line(log_path, &msg);
-            }
-        }
-    } else {
-        append_log_line(
-            log_path,
-            &format!(
-                "[supervisor] carousel already in terminal state '{:?}'",
-                status
-            ),
-        );
-    }
+    generation::finalize(base_dir.as_deref(), carousel_id, log_path, reason);
 }
 
 /// Read the last `max_lines` lines of the carousel's `run.log`.

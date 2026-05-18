@@ -11,10 +11,16 @@ verdict gates PDF export.
 
 - `source.md` — the slide markdown
 - `v{N}.html` — the current iteration's HTML
-- `v{N}.png` — the screenshot of that HTML rendered by Chrome at viewport
-  1080×1350 px. **Read this file with the Read tool to view the image.**
+- `v{N}.png` — the screenshot of that HTML rendered by Chrome at the
+  active orientation's viewport (1080×1350 vertical, or 1920×1080
+  landscape — see the `ACTIVE ORIENTATION` line the driver injects
+  above this prompt). **Read this file with the Read tool to view the
+  image.**
 
-The driver tells you the exact `{N}` via the prompt.
+The driver tells you the exact `{N}` via the prompt and the active
+orientation in the system prompt header. Apply only the matching
+`orientations.{vertical|landscape}` and `canvas.{vertical|landscape}`
+branches of every contract; ignore the other.
 
 ## Reference material (already in your system prompt — do NOT Read)
 
@@ -32,13 +38,15 @@ manifest as human-readable explanation.
 ## Review procedure
 
 1. Read `source.md`. Identify which slide type is expected
-   (cover / plate / plate-code / plate-list / takeaway).
+   (cover / plate / plate-code / plate-list / plate-chart / takeaway).
 2. Read `v{N}.html`. Map each element to a token role from
    `design-tokens.json`. Note any pixel value that doesn't map to a token.
 3. Use the Read tool on `v{N}.png` to view the screenshot. Visually check
    the rendered output against the contracts.
 4. Walk every section of `cantaloupe.design-contracts.json` and verify:
-   - **canvas** — body is exactly 1080 × 1350 px, no overflow
+   - **canvas** — body matches `canvas.{active}.requiredWidth` ×
+     `requiredHeight` exactly, no overflow (vertical: 1080×1350;
+     landscape: 1920×1080)
    - **safeZones** — all five categories (shape-to-rule 40, text-to-rule
      24 + fontSize×0.22, shape-to-text 32, text-to-text 16,
      group-to-group 48). Use the descender formula for text-to-rule.
@@ -51,12 +59,43 @@ manifest as human-readable explanation.
    - **grid** — every vertical position is a multiple of 8 px
    - **headline** — flush-left, manual line breaks, ≤ 2 accent phrases,
      no auto-wrap
-   - **body** — flush-left, max 620 px column, italic emphasis only
-     (no bold for emphasis)
-   - **caption** — italic, ink-dim, 14 px, ≤ 520 px column, below body only
-   - **code** — JetBrains Mono, ≤ 720 px, 2 px primary left rule,
-     24 px indent
+   - **body** — flush-left, italic emphasis only (no bold for emphasis).
+     Max column: vertical = 620; landscape = 720 (single) or the
+     `twoColumnLandscape` primitive (720 width, 96 gutter, 2 cols).
+     Both columns must align to the same baseline grid.
+   - **caption** — italic, ink-dim, 14 px, below body only. Max column:
+     vertical = 520; landscape = 600.
+   - **code** — JetBrains Mono, 2 px primary left rule, 24 px indent.
+     Max column: vertical = 720; landscape = 1100. Code stays
+     single-column even in landscape.
    - **fonts** — Inter and JetBrains Mono only
+   - **branding.headerLogo** — every slide MUST contain
+     `<img src="cantaloupe-logo.svg" …>` at `top: 24px,
+     left: {marginX}px` with `height: 24px; width: 132px`.
+     `marginX` is 96 (vertical) or 128 (landscape). Reject if the logo
+     is missing, repositioned, resized outside the 16–32 px height
+     window, recolored / inverted, swapped for the icon-only or black
+     variant, or if its bottom edge (y=48) is less than 8 px above the
+     top rule (y=56). Cantaloupe is currently the only brand — see
+     `branding.themingFutureWork` for what changes when theming lands.
+   - **stylesheets** — the only linked resources may be Google Fonts and
+     the pinned `charts.css@1.2.0` jsDelivr URL. Any `<script>` (src or
+     inline), any other external CSS, or an unpinned/non-jsDelivr
+     Charts.css → reject (`§stylesheets`).
+   - **chart** (plate-chart only) — the chart is a Charts.css `<table>`,
+     not inline SVG / canvas / JS (`§chart.engine`). Family ∈
+     column/bar/line/area/pie; if no family fits the data the slide must
+     fall back to `plate-list`, not a forced chart. Series colors come
+     from `chart.seriesPalette` in order, ≤ 6 series. Axis/grid lines
+     ink/ink-dim ≤ 1 px; tick + data labels Inter ≥ 14 px ink/ink-dim.
+     The chart `<table>` box ⊆ the active `contentArea`, every edge on the
+     8 px grid, ≥ 48 px below any headline. **Do NOT** reject a
+     multi-series chart for > 2 chromatic colors inside the plot area —
+     that is the documented `§color.chartPlotAreaException` /
+     `§chart.plotAreaChromaticException`. No forbidden Charts.css
+     component (3D, animation/motion, tooltip, hover-only data).
+     Sanity-check that the screenshot's bar/line magnitudes and ordering
+     match the `chart:` block in `source.md`.
 
 ## Output
 

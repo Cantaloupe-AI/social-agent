@@ -15,6 +15,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 
 import { Button } from "@/components/ui/button";
+import { OrientationToggle } from "@/components/OrientationToggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSlides } from "@/hooks/useSlides";
@@ -24,7 +25,7 @@ import {
   openPdf,
   readSlideScreenshotDataUrl,
 } from "@/lib/tauri";
-import type { Carousel, Slide, SlideStatus } from "@/lib/types";
+import type { Carousel, Orientation, Slide, SlideStatus } from "@/lib/types";
 import { effectiveSlideTitle } from "@/lib/slide-title";
 
 interface CarouselEditorProps {
@@ -39,6 +40,11 @@ interface CarouselEditorProps {
     implModel: string | null,
     managerModel: string | null,
   ) => Promise<void>;
+  /**
+   * Persist a new canvas orientation for this carousel. The renderer +
+   * agents pick up the change on the next generation run.
+   */
+  onUpdateOrientation: (orientation: Orientation) => Promise<void>;
   onBack: () => void;
   /**
    * Called when this carousel has an active or just-started run. The parent
@@ -68,6 +74,7 @@ export function CarouselEditor({
   label,
   onRename,
   onUpdateModels,
+  onUpdateOrientation,
   onBack,
   onGenerationActive,
 }: CarouselEditorProps) {
@@ -210,6 +217,10 @@ export function CarouselEditor({
   const [carouselStatus, setCarouselStatus] = useState<Carousel["status"]>(
     "idle",
   );
+  // Orientation drives the preview frame size and shows up in the toolbar
+  // toggle. Hydrated from the carousel row on entry; updated optimistically
+  // on user toggle, reverted on persistence failure.
+  const [orientation, setOrientation] = useState<Orientation>("vertical");
 
   // Keep a valid active tab as slides change.
   useEffect(() => {
@@ -234,6 +245,7 @@ export function CarouselEditor({
         setCarouselPdfPath(c.pdf_path);
         setImplModel(c.impl_model);
         setManagerModel(c.manager_model);
+        setOrientation(c.orientation);
         setCarouselStatus(c.status);
         if (c.status === "generating") onGenerationActive(c);
       })
@@ -276,6 +288,19 @@ export function CarouselEditor({
       console.error("cantalog: changeManagerModel failed", e);
       setManagerModel(prev);
       setGenError(`Could not update manager model: ${String(e)}`);
+    }
+  }
+
+  async function changeOrientation(next: Orientation) {
+    if (next === orientation) return;
+    const prev = orientation;
+    setOrientation(next);
+    try {
+      await onUpdateOrientation(next);
+    } catch (e: unknown) {
+      console.error("cantalog: changeOrientation failed", e);
+      setOrientation(prev);
+      setGenError(`Could not update orientation: ${String(e)}`);
     }
   }
 
@@ -324,6 +349,11 @@ export function CarouselEditor({
             {slideCount} {slideCount === 1 ? "slide" : "slides"}
           </p>
         </div>
+        <OrientationToggle
+          value={orientation}
+          onChange={(v) => void changeOrientation(v)}
+          disabled={carouselStatus === "generating"}
+        />
         <ModelSelect
           label="Impl"
           value={implModel ?? DEFAULT_MODEL_VALUE}
@@ -429,7 +459,11 @@ export function CarouselEditor({
                   }
                 }}
               />
-              <SlideRenderPreview slideId={s.id} status={s.status} />
+              <SlideRenderPreview
+                slideId={s.id}
+                status={s.status}
+                orientation={orientation}
+              />
             </TabsContent>
           ))}
         </Tabs>
@@ -638,9 +672,11 @@ function SlideEditor({
 function SlideRenderPreview({
   slideId,
   status,
+  orientation,
 }: {
   slideId: string;
   status: SlideStatus;
+  orientation: Orientation;
 }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -690,17 +726,26 @@ function SlideRenderPreview({
     );
   }
 
+  // Display each slide at ~25 % of native size. Vertical (1080×1350) caps
+  // by height (1350 × 0.25 ≈ 338, rounded up to 540 for visual room);
+  // landscape (1920×1080) caps by width (1920 × 0.25 = 480) to keep the
+  // on-screen footprint comparable instead of letting the wider canvas
+  // stretch across the editor pane.
+  const previewStyle =
+    orientation === "landscape"
+      ? { maxWidth: 480 }
+      : { maxHeight: 540 };
+
   return (
     <div className="mt-3 rounded-md border border-input bg-muted/30 p-3">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">
         Latest render
       </div>
-      {/* Slide is 1080×1350 — display at ~25% so the whole page fits in the editor pane. */}
       <img
         src={dataUrl}
         alt={`Slide ${slideId} render`}
         className="block max-w-full h-auto rounded border border-border/50"
-        style={{ maxHeight: 540 }}
+        style={previewStyle}
       />
     </div>
   );

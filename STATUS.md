@@ -22,16 +22,32 @@ All five checkpoints green.
 
 ## Test counts (honest, not inflated)
 
-### Rust (28 total)
+### Rust (78 total — `cd src-tauri && cargo test`)
+
+The rows below are the v0.1 baseline (28) plus what the carousels/slides
+feature and the `cantalog-cli` work added. `db.rs` in particular grew well
+past its original 5 rows (carousel + slide + slide-version + slug CRUD); the
+authoritative number is whatever `cargo test` reports (78 as of 2026-05-18).
 
 | File | # | What's covered |
 |---|---|---|
 | `src-tauri/src/config.rs` | 3 | first-run creates defaults + writes to disk; save/load roundtrip; TOML missing `[git]` table parses via serde default |
-| `src-tauri/src/db.rs` | 5 | migrate creates entries table; save + load roundtrip; load returns None on miss; overwrite preserves `created_at` + bumps `updated_at`; migrate is idempotent |
+| `src-tauri/src/db.rs` | baseline 5 + carousel/slide growth | migrate creates entries table; save + load roundtrip; load returns None on miss; overwrite preserves `created_at` + bumps `updated_at`; migrate is idempotent; (plus carousel/slide/slide-version/slug CRUD added with the Slides feature) |
+| `src-tauri/src/generation.rs` | 8 | `prepare_run` error paths (missing carousel / no slug / no slides / driver script missing) + happy path (status→generating, slides→queued, run-1 then run-2, opening run.log line); `finalize` idempotency (stuck-generating→failed, terminal untouched, missing carousel no panic); `spawn_driver` failure marks the carousel failed (deterministic via a non-existent `current_dir`, no `$PATH`/global mutation) |
+| `src-tauri/src/cli.rs` | 17 | `parse_deck` (5-block split + front-matter title/slug, fenced `#`/`# Slide` not a boundary, no-front-matter, CRLF, unterminated front-matter error, no-slides error); `read_content` inline/file/injected-stdin; `cmd_carousel_create`/`list` (slug, bad-orientation reject); `cmd_slide_add` (with/without title, missing carousel); `cmd_import` (new + explicit label, front-matter fallback, no-label error, append to existing, missing-carousel error); `cmd_status` (idle + log-tail bound + missing carousel); `cmd_open` (no-PDF error, injected opener path, missing-on-disk error) |
 | `src-tauri/src/sources/git.rs` | 6 | empty output; single commit with timezone conversion; multi-commit order; blank lines skipped; garbage lines skipped; `fetch_today` on a real non-repo returns `Ok(vec![])` |
 | `src-tauri/src/sources/claude_code.rs` | 14 | string content; array content first-text-block; tool-result wrapper skipped in favor of real user message; malformed line recovery; no-user-message → None; 80-char truncation with `…`; multibyte char safety; `unescape_project_name` literal spec behavior; same-day / different-day detection; missing dir; empty dir; today-only filtering across two sessions (uses `File::set_modified`); non-.jsonl files ignored |
 
-### TypeScript (13 total)
+The generation/agent loop itself (bun → Claude Agent SDK → real PDF) is
+**deliberately not unit-tested** — it's network-bound, costs money, and runs
+for minutes. Its decomposable pieces (`prepare_run`/`spawn_driver`/`finalize`,
+the deck parser, every handler) are unit-tested; the full run is a
+manual/confirmed E2E (`cantalog-cli generate <id>`). No `#[ignore]`.
+
+### TypeScript (25 total — `bun run vitest run`)
+
+Baseline rows below (13) plus growth from the slides feature
+(`slide-title.test.ts`); authoritative number is whatever vitest reports.
 
 | File | # | What's covered |
 |---|---|---|
@@ -48,6 +64,17 @@ All five checkpoints green.
 - **First user message when the first `type:"user"` line has no text block.** Spec says "first message with role: user" — ambiguous on whether to skip that line when its content is a tool_result wrapper with no top-level text. I chose to **continue to the next user line** so the summary surfaces the human's typed prompt rather than a tool bookkeeping record. Covered by the `tool_result_then_user` fixture + test. If you want the stricter "look at literally the first user line and give up if it has no text", one flag flip.
 
 ### TODO(dep) — considered another dep, used a simpler approach instead
+
+Added since (with justification):
+- **`clap` 4 (`derive` only)** — arg parsing for the new `cantalog-cli`
+  binary. `cantalog-cli` exposes 8 subcommands (`carousel create/list`,
+  `slide add`, `import`, `generate`, `status`, `open`); hand-rolling that
+  with usable `--help` / arg groups / conflicts is error-prone churn for
+  zero benefit. `derive`-only, and only the `cantalog-cli` bin links it —
+  the Tauri app binary and `cantalog_lib` don't use clap, so the shipped
+  app is unaffected. Chosen over a hand-rolled `std::env::args` parser
+  (worse UX, more bug surface) per the same reasoning that kept the other
+  deps out below.
 
 No extra deps were added beyond:
 - Approved list + Vitest/@testing-library (explicitly allowed in the addendum)
@@ -128,15 +155,78 @@ If anything on this list breaks, check:
 - ✅ **Window close after save now terminates the process.** Added a `quit_app` Tauri command that calls `AppHandle::exit(0)`, and Save + Escape now invoke it via `quitApp()` instead of `getCurrentWindow().close()`. Without this, macOS's default AppKit behavior (keep the app alive when the last window closes) conflicted with the spec's "app closes itself after save" — the dock icon would stay.
 - ✅ **ConfigDialog with a null config now shows a recovery message** explaining the likely cause (missing/corrupt `config.toml`) and the fix (restart; it auto-creates defaults). Previously the dialog opened with all inputs disabled and no explanation.
 
+## CLI (`cantalog-cli`)
+
+A second binary in the `cantalog` crate (`[[bin]]` in `Cargo.toml`;
+`src/main.rs` stays the app binary via Cargo autodiscovery) that drives the
+**same** SQLite + bun pipeline the Tauri app uses — for testing the core
+loop and for other agents.
+
+> **Gotcha (fixed):** adding a second `[[bin]]` makes `tauri build` fail
+> with *"failed to find main binary"* — with >1 bin and no
+> `package.default-run`, Tauri can't infer the app binary. `cargo test` /
+> `cargo build` don't surface this (they build all bins). Fix:
+> `default-run = "cantalog"` in `[package]`. Caught by running the full
+> `tauri build --debug`, not just `cargo test`.
+
+- **Refactor (behavior-preserving):** the Tauri-free guts of
+  `generate_carousel_pdf` moved into `generation.rs`
+  (`prepare_run` / `spawn_driver` / `finalize` + `next_run_dir`,
+  `spawn_pipe_tee`, `append_log_line`). The Tauri command keeps only the
+  `GenerationProcesses` parking + watcher thread (the UI-cancel concern)
+  and calls the shared core; the CLI calls the same core. Run-dir naming
+  and the crash-finalize safety net now exist in exactly one place
+  (CLAUDE.md §conventions/errors). All pre-existing Rust tests stayed green.
+- **Commands:** `carousel create|list`, `slide add` (`--file|--stdin|--content`,
+  `--title`), `import` (`--new [--label] | --carousel <id>`, splits a deck
+  on `# Slide …` blocks), `generate <id> [--detach] [--no-open]`,
+  `status <id> [--log N] [--watch]`, `open <id>`.
+- **Headless + open at the end:** `generate` blocks by default, streams the
+  bun driver's stdout/stderr to the terminal (already tee'd by
+  `spawn_driver`), runs `generation::finalize`, and opens the resulting PDF
+  with macOS `open` unless `--no-open`. `--detach` returns immediately and
+  you poll with `status`.
+- **Known limitation — cross-process cancel:** the UI's `cancel_generation`
+  works via the in-memory `GenerationProcesses` map, which only exists
+  inside the running app; a separate CLI process can't see another
+  process's child handles. Supported cancel is Ctrl-C on a blocking
+  `generate` (SIGINT reaches the bun child via the shared process group;
+  the wait loop then reaps and finalizes). If the CLI is hard-killed before
+  finalize, the carousel may be left `generating`; re-running `generate`
+  (or the app's own generate) self-heals it because `prepare_run` resets
+  run state. A PID-file cross-process `cancel` is a possible later addition.
+- **No `--detach`:** `generate` is always blocking and supervised
+  end-to-end (verified through the real agent loop). A `--detach` mode was
+  built then **removed** — it left `run.log` capture dead (tee threads die
+  with the CLI process) and the run unsupervised, for no real benefit: an
+  async caller can just background the blocking command at the shell.
+- **Prompt-injection threat model:** slide content (from `slide add` /
+  `import`) is written verbatim to `source.md` and read by the
+  implementation agent, which has `Read/Write/Edit` tools scoped to the
+  slide dir. This is a **local-only, single-user, self-authored** tool —
+  the threat is a deck file from an untrusted third party. Do not
+  `import` deck markdown you didn't write/review. Same property the app's
+  own slide editor has; not introduced by the CLI.
+- **Deck preamble:** non-front-matter content before the first `# Slide`
+  is dropped (documented in `parse_deck`'s doc-comment); an **unclosed**
+  fenced code block is now a hard error (was: silently swallowed
+  following slides), and `~~~`/``` ``` ``` fences are matched by their
+  opening marker per CommonMark.
+
 ## File-by-file inventory
 
 ```
 src-tauri/src/
-├── commands.rs        — 5 Tauri commands, thin wrappers
+├── commands.rs        — Tauri commands (thin wrappers); generate_carousel_pdf
+│                          parks the child + watcher, delegates core to generation.rs
+├── generation.rs      — Tauri-free generation core shared by the Tauri command
+│                          and cantalog-cli (8 tests)
+├── cli.rs             — cantalog-cli handlers + parse_deck, pure/Result-returning (17 tests)
+├── bin/cantalog-cli.rs — thin clap parser over cli.rs
 ├── config.rs          — load/save TOML + default_config() (3 tests)
-├── db.rs              — open, migrate, save/load_entry (5 tests)
+├── db.rs              — open, migrate, entry + carousel/slide CRUD
 ├── lib.rs             — module tree + Tauri builder + plugin + handler registration
-├── main.rs            — delegates to cantalog_lib::run
+├── main.rs            — delegates to cantalog_lib::run (default app binary)
 ├── types.rs           — Activity, Entry, Config, ActivitySource, GitConfig, ClaudeCodeConfig
 └── sources/
     ├── mod.rs         — re-exports claude_code + git
@@ -146,7 +236,8 @@ src-tauri/src/
 
 src-tauri/tests/fixtures/
 ├── git/{empty,single,multi,with_blank_lines}.txt
-└── claude/{typed_prompt,array_content,tool_result_then_user,malformed,no_user,long_prompt}.jsonl
+├── claude/{typed_prompt,array_content,tool_result_then_user,malformed,no_user,long_prompt}.jsonl
+└── deck/example.md   — 5-slide deck with front-matter + a fenced-code plate (parse_deck)
 
 src/
 ├── App.tsx            — shell composing hooks + components + keyboard + save flow

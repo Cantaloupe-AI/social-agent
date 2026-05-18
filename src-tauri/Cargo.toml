@@ -4,10 +4,20 @@ version = "0.1.0"
 description = "Local-only daily activity capture"
 authors = ["Joshua Anderson"]
 edition = "2021"
+# Two binaries (the Tauri app + cantalog-cli) means `tauri build` can't
+# infer the main one — pin it. `cantalog` is src/main.rs (the app).
+default-run = "cantalog"
 
 [lib]
 name = "cantalog_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Scriptable surface over the same backend the Tauri app uses (create a
+# deck, add slides, import, generate, status, open). `src/main.rs` stays
+# the default Tauri-app binary via Cargo autodiscovery.
+[[bin]]
+name = "cantalog-cli"
+path = "src/bin/cantalog-cli.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -25,3 +35,11 @@ anyhow = "1"
 thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+# CLI arg parsing for the `cantalog-cli` binary (derive only). Hand-rolling
+# 8 subcommands with usable `--help` isn't worth the churn; see STATUS.md.
+# Only `src/bin/cantalog-cli.rs` uses clap — `cantalog_lib` and the Tauri
+# app binary do not. Verified: `strings target/.../cantalog | grep clap`
+# is empty (dead-code-eliminated), so the shipped app does NOT link clap.
+# (Cargo has no clean per-bin deps without a sub-crate; the compile-time
+# cost is accepted. A `cargo audit` hit on clap does NOT affect the app.)
+clap = { version = "4", features = ["derive"] }

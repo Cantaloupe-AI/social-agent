@@ -17,13 +17,13 @@
 
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { PDFDocument } from "pdf-lib";
-import { renderSlide } from "./render-slide.ts";
+import { ORIENTATION_DIMS, renderSlide, type Orientation } from "./render-slide.ts";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -33,6 +33,26 @@ const DB_PATH = join(DATA_DIR, "db.sqlite");
 
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
 const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
+
+/**
+ * Source path of the brand logo + the per-slide filename the agent
+ * embeds. We copy the asset into each slide's working dir at run start
+ * so the generated HTML can reference it by simple relative path
+ * (`<img src="happycampr-logo.svg">`). Keeps the slide folder
+ * self-contained — puppeteer's `file://` resolver picks it up without
+ * any absolute paths leaking into the HTML.
+ *
+ * Until theming lands, this is the only brand identity. See
+ * `design/carousel.manifest.json#branding.themingFutureWork` for the
+ * future-state plan.
+ */
+const HEADER_LOGO_SRC_PATH = join(
+  REPO_ROOT,
+  "design",
+  "assets",
+  "happycampr-logo-full.svg",
+);
+const HEADER_LOGO_FILENAME = "happycampr-logo.svg";
 
 /**
  * Design files inlined into every agent's system prompt at run start.
@@ -57,6 +77,19 @@ const DEFAULT_MODEL = "claude-opus-4-7";
 /** Maximum implement→review rounds per slide before we give up. */
 const MAX_ITERS = 4;
 
+/**
+ * Idle watchdog for SDK streams. If the agent's async iterator yields no
+ * message for this long, we assume the upstream SSE has silently stalled
+ * (observed once: manager review hung mid-Read on slide 6, no result, no
+ * error, dead air for hours). Aborts the query so the iter-retry loop
+ * can decide whether to retry or fail the slide.
+ *
+ * Set well above the worst-case legit thinking gap. Longest happy-path
+ * silence seen in run logs is ~2 min between rate_limit_event and the
+ * next thinking block; 4 min gives ~2× headroom.
+ */
+const SDK_IDLE_TIMEOUT_MS = 240_000;
+
 // ─── DB helpers ─────────────────────────────────────────────────────────────
 
 interface CarouselRow {
@@ -67,6 +100,12 @@ interface CarouselRow {
   /** NULL = use DEFAULT_MODEL. Same on manager_model. */
   impl_model: string | null;
   manager_model: string | null;
+  /**
+   * Canvas orientation. The DB column is NOT NULL with DEFAULT
+   * 'vertical'; we still defensively coerce here so a hand-edited DB
+   * with a stray value doesn't blow up the run.
+   */
+  orientation: string;
 }
 
 interface SlideRow {
@@ -89,11 +128,21 @@ function openDb(): Database {
 function loadCarousel(db: Database, id: string): CarouselRow {
   const row = db
     .query<CarouselRow, [string]>(
-      "SELECT id, label, slug, status, impl_model, manager_model FROM carousels WHERE id = ?",
+      "SELECT id, label, slug, status, impl_model, manager_model, orientation FROM carousels WHERE id = ?",
     )
     .get(id);
   if (!row) throw new Error(`Carousel ${id} not found`);
   return row;
+}
+
+function resolveOrientation(raw: string): Orientation {
+  if (raw === "vertical" || raw === "landscape") return raw;
+  // CHECK constraint should make this unreachable; log and fall back so
+  // a misbehaving migration doesn't kill the whole run.
+  process.stderr.write(
+    `[bun-driver] WARN: unknown orientation "${raw}", defaulting to vertical\n`,
+  );
+  return "vertical";
 }
 
 function loadSlides(db: Database, carouselId: string): SlideRow[] {
@@ -302,6 +351,7 @@ async function driveAgent(opts: {
   /** Model id passed through to the SDK. Caller resolves NULL → DEFAULT_MODEL. */
   model: string;
 }): Promise<void> {
+  const abortController = new AbortController();
   const q = query({
     prompt: opts.prompt,
     options: {
@@ -310,6 +360,7 @@ async function driveAgent(opts: {
       systemPrompt: opts.systemPrompt,
       permissionMode: "auto",
       allowedTools: opts.allowedTools,
+      abortController,
     },
   });
 
@@ -326,18 +377,58 @@ async function driveAgent(opts: {
       }
     | null = null;
   let messageCount = 0;
+
+  // Idle watchdog: reset on every SDK event. If it fires, the upstream
+  // stream has gone silent — abort the query and surface a clear error.
+  let watchdogTripped = false;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const armWatchdog = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      watchdogTripped = true;
+      process.stderr.write(
+        `  [sdk:${opts.label}] idle watchdog: no message in ${SDK_IDLE_TIMEOUT_MS}ms — aborting\n`,
+      );
+      abortController.abort();
+    }, SDK_IDLE_TIMEOUT_MS);
+  };
+  const disarmWatchdog = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
+
   // Log every SDK message so a stuck agent is visible in run.log instead of
   // silent. Per CLAUDE.md §conventions/errors: no silent failures.
   // We don't dump full content (that would flood the log on long thinking
   // turns); just type + a short discriminator so we can see progress.
-  for await (const msg of q) {
-    messageCount++;
-    process.stderr.write(
-      `  [sdk:${opts.label}] #${messageCount} ${describeSdkMessage(msg)}\n`,
-    );
-    if ((msg as { type?: string }).type === "result") {
-      resultMessage = msg as typeof resultMessage;
+  try {
+    armWatchdog();
+    for await (const msg of q) {
+      armWatchdog();
+      messageCount++;
+      process.stderr.write(
+        `  [sdk:${opts.label}] #${messageCount} ${describeSdkMessage(msg)}\n`,
+      );
+      if ((msg as { type?: string }).type === "result") {
+        resultMessage = msg as typeof resultMessage;
+      }
     }
+  } catch (err) {
+    if (watchdogTripped) {
+      throw new Error(
+        `${opts.label} idle watchdog tripped after ${messageCount} message(s) — SDK stream went silent for ${SDK_IDLE_TIMEOUT_MS}ms`,
+      );
+    }
+    throw err;
+  } finally {
+    disarmWatchdog();
+  }
+  if (watchdogTripped) {
+    throw new Error(
+      `${opts.label} idle watchdog tripped after ${messageCount} message(s) — SDK stream went silent for ${SDK_IDLE_TIMEOUT_MS}ms`,
+    );
   }
   process.stderr.write(
     `  [sdk:${opts.label}] stream ended after ${messageCount} message(s)\n`,
@@ -499,6 +590,7 @@ async function generateSlide(opts: {
   managerPrompt: string;
   implModel: string;
   managerModel: string;
+  orientation: Orientation;
   log: (line: string) => void;
 }) {
   const {
@@ -510,6 +602,7 @@ async function generateSlide(opts: {
     managerPrompt,
     implModel,
     managerModel,
+    orientation,
     log,
   } = opts;
   const slideFolderName = `${String(slideIndex).padStart(2, "0")}-${slide.id}`;
@@ -518,6 +611,14 @@ async function generateSlide(opts: {
 
   // Freeze the source markdown at run start.
   await writeFile(join(slideDir, "source.md"), slide.content, "utf8");
+
+  // Copy the brand logo into the slide dir so the agent's HTML can
+  // reference it with `<img src="happycampr-logo.svg">` and puppeteer
+  // resolves it relative to the file:// URL of the rendered HTML.
+  // copyFile (rather than symlink) is intentional: the slide dir is
+  // committed to disk as the run's artifact, and a symlink that points
+  // back into the repo would break if the repo moves.
+  await copyFile(HEADER_LOGO_SRC_PATH, join(slideDir, HEADER_LOGO_FILENAME));
 
   // Skip the agent loop if we have a previously-accepted version whose
   // markdown matches the current slide content. The PDF concat step picks
@@ -584,9 +685,9 @@ async function generateSlide(opts: {
     }
     const version = insertSlideVersion(db, slide.id, htmlPath);
 
-    // Step 2 — render with puppeteer
+    // Step 2 — render with puppeteer at the carousel's active orientation.
     log(`  iter ${iter}: render`);
-    await renderSlide({ htmlPath, pngPath, pdfPath });
+    await renderSlide({ htmlPath, pngPath, pdfPath, orientation });
     updateSlideVersionRenders(db, version.id, pngPath, pdfPath);
 
     // Step 3 — manager agent reviews
@@ -660,22 +761,41 @@ async function main() {
   // a one-line edit.
   const implModel = carousel.impl_model || DEFAULT_MODEL;
   const managerModel = carousel.manager_model || DEFAULT_MODEL;
+  const orientation = resolveOrientation(carousel.orientation);
+  const dims = ORIENTATION_DIMS[orientation];
 
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
   log(`Models: impl=${implModel}, manager=${managerModel}`);
+  log(`Orientation: ${orientation} (${dims.widthPx} × ${dims.heightPx})`);
 
   // Read the design spec ONCE up front and embed it into both agents'
   // system prompts. This avoids the per-iteration Read-tool round trips
   // that were burning input-tokens-per-minute and tripping rate limits
   // on the very first slide. Files stay on disk; the agent just sees
   // them as context instead of having to fetch them.
+  //
+  // The ACTIVE ORIENTATION header sits *above* the design spec so the
+  // agent reads it first and knows which `orientations.X` and
+  // `canvas.X` branches to follow.
   const designSpec = await loadDesignSpec();
   log(`Embedded design spec: ${designSpec.length.toLocaleString()} chars`);
+  const orientationHeader = [
+    "==========================================================",
+    `ACTIVE ORIENTATION: ${orientation} (${dims.widthPx} × ${dims.heightPx})`,
+    `Use the \`${orientation}\` branch of every per-orientation rule below`,
+    `(orientations.${orientation} in carousel.manifest.json,`,
+    ` canvas.${orientation} in cantaloupe.design-contracts.json,`,
+    ` layout.canvas.${orientation} in design-tokens.json,`,
+    ` and the maxColumnPx.${orientation} variants for body / code).`,
+    `Ignore the other branch.`,
+    "==========================================================",
+    "",
+  ].join("\n");
   const implRolePrompt = await Bun.file(IMPL_PROMPT_PATH).text();
   const managerRolePrompt = await Bun.file(MGR_PROMPT_PATH).text();
-  const implPrompt = `${implRolePrompt}\n\n${designSpec}`;
-  const managerPrompt = `${managerRolePrompt}\n\n${designSpec}`;
+  const implPrompt = `${implRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
+  const managerPrompt = `${managerRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
 
   let allOk = true;
   for (let i = 0; i < slides.length; i++) {
@@ -691,6 +811,7 @@ async function main() {
         managerPrompt,
         implModel,
         managerModel,
+        orientation,
         log,
       });
       log(`✓ slide ${i + 1} done`);

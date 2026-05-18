@@ -1,5 +1,6 @@
 use crate::types::{
-    Activity, Carousel, CarouselStatus, Entry, Slide, SlideFeedback, SlideStatus, SlideVersion,
+    Activity, Carousel, CarouselStatus, Entry, Orientation, Slide, SlideFeedback, SlideStatus,
+    SlideVersion,
 };
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -99,6 +100,17 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     // means "use the driver's DEFAULT_MODEL" — see scripts/generate-carousel.ts.
     ensure_column(conn, "carousels", "impl_model", "TEXT")?;
     ensure_column(conn, "carousels", "manager_model", "TEXT")?;
+    // Per-carousel canvas orientation. NOT NULL with DEFAULT 'vertical'
+    // means existing rows backfill to vertical (the legacy 1080×1350) and
+    // inserts that don't specify orientation pick up the default — so the
+    // ~25 test sites that do `create_carousel(&conn, "label")` keep
+    // working without churn.
+    ensure_column(
+        conn,
+        "carousels",
+        "orientation",
+        "TEXT NOT NULL CHECK (orientation IN ('vertical','landscape')) DEFAULT 'vertical'",
+    )?;
 
     ensure_column(
         conn,
@@ -270,7 +282,7 @@ fn parse_rfc3339(s: &str) -> Result<DateTime<Utc>> {
 }
 
 const CAROUSEL_COLUMNS: &str =
-    "id, label, slug, status, pdf_path, run_dir, run_started_at, run_finished_at, created_at, updated_at, impl_model, manager_model";
+    "id, label, slug, status, pdf_path, run_dir, run_started_at, run_finished_at, created_at, updated_at, impl_model, manager_model, orientation";
 
 fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
     let id: String = row.get(0)?;
@@ -285,6 +297,11 @@ fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
     let updated_at: String = row.get(9)?;
     let impl_model: Option<String> = row.get(10)?;
     let manager_model: Option<String> = row.get(11)?;
+    let orientation_raw: String = row.get(12)?;
+    // Defensive fallback: the CHECK constraint should make any other
+    // value impossible, but reading the column shouldn't panic if a
+    // future migration ever loosens the constraint.
+    let orientation = Orientation::from_str(&orientation_raw).unwrap_or(Orientation::Vertical);
     let parse_dt = |s: &str| {
         DateTime::parse_from_rfc3339(s)
             .map(|d| d.with_timezone(&Utc))
@@ -313,6 +330,7 @@ fn map_carousel_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Carousel> {
         updated_at: parse_dt(&updated_at)?,
         impl_model,
         manager_model,
+        orientation,
     })
 }
 
@@ -340,6 +358,17 @@ pub fn get_carousel(conn: &Connection, id: &str) -> Result<Option<Carousel>> {
 }
 
 pub fn create_carousel(conn: &Connection, label: &str) -> Result<Carousel> {
+    create_carousel_with_orientation(conn, label, Orientation::Vertical)
+}
+
+/// Create a carousel with an explicit orientation. The vertical-only
+/// `create_carousel` is a thin wrapper around this — both end up in the
+/// same INSERT below.
+pub fn create_carousel_with_orientation(
+    conn: &Connection,
+    label: &str,
+    orientation: Orientation,
+) -> Result<Carousel> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let base = slugify(label);
@@ -347,10 +376,10 @@ pub fn create_carousel(conn: &Connection, label: &str) -> Result<Carousel> {
     let slug = unique_slug(conn, &base, None)?;
     conn.execute(
         r#"
-        INSERT INTO carousels (id, label, slug, status, created_at, updated_at)
-        VALUES (?1, ?2, ?3, 'idle', ?4, ?4)
+        INSERT INTO carousels (id, label, slug, status, orientation, created_at, updated_at)
+        VALUES (?1, ?2, ?3, 'idle', ?4, ?5, ?5)
         "#,
-        params![id, label, slug, now],
+        params![id, label, slug, orientation.as_str(), now],
     )
     .context("inserting carousel")?;
     get_carousel(conn, &id)?.ok_or_else(|| anyhow!("carousel disappeared after insert"))
@@ -404,6 +433,27 @@ pub fn update_carousel_models(
         params![id, impl_norm, manager_norm, now],
     )
     .context("updating carousel models")?;
+    Ok(())
+}
+
+/// Set the carousel's canvas orientation. Used by the editor's
+/// orientation dropdown — `update_carousel_models` is the precedent for
+/// per-carousel mutable settings.
+pub fn update_carousel_orientation(
+    conn: &Connection,
+    id: &str,
+    orientation: Orientation,
+) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        r#"
+        UPDATE carousels
+        SET orientation = ?2, updated_at = ?3
+        WHERE id = ?1
+        "#,
+        params![id, orientation.as_str(), now],
+    )
+    .context("updating carousel orientation")?;
     Ok(())
 }
 
@@ -479,13 +529,17 @@ pub fn duplicate_carousel(conn: &mut Connection, id: &str) -> Result<Carousel> {
         let base = if base.is_empty() { "carousel".to_string() } else { base };
         let new_slug = unique_slug(&tx, &base, None)?;
 
-        // 4. Insert the new carousel, copying model overrides only.
+        // 4. Insert the new carousel, copying model overrides + orientation.
+        //    Orientation carries over because a duplicate is meant for
+        //    "retry-with-tweaks" and the canvas size is part of what the
+        //    user is iterating on.
         tx.execute(
             r#"
             INSERT INTO carousels
                 (id, label, slug, status, pdf_path, run_dir, run_started_at,
-                 run_finished_at, impl_model, manager_model, created_at, updated_at)
-            VALUES (?1, ?2, ?3, 'idle', NULL, NULL, NULL, NULL, ?4, ?5, ?6, ?6)
+                 run_finished_at, impl_model, manager_model, orientation,
+                 created_at, updated_at)
+            VALUES (?1, ?2, ?3, 'idle', NULL, NULL, NULL, NULL, ?4, ?5, ?6, ?7, ?7)
             "#,
             params![
                 new_id,
@@ -493,6 +547,7 @@ pub fn duplicate_carousel(conn: &mut Connection, id: &str) -> Result<Carousel> {
                 new_slug,
                 source.impl_model,
                 source.manager_model,
+                source.orientation.as_str(),
                 now
             ],
         )
@@ -1511,6 +1566,53 @@ mod tests {
         let dup2 = duplicate_carousel(&mut conn, &src.id).unwrap();
         assert!(dup2.label.starts_with("Source copy "));
         assert_ne!(dup2.label, dup.label);
+    }
+
+    #[test]
+    fn carousel_orientation_default_vertical_and_roundtrip() {
+        let conn = open_in_memory().unwrap();
+
+        // Default path: `create_carousel` (no orientation arg) yields a
+        // vertical carousel — this is what every legacy test relies on.
+        let v = create_carousel(&conn, "vertical-deck").unwrap();
+        assert_eq!(v.orientation, Orientation::Vertical);
+
+        // Explicit landscape via the with_orientation helper.
+        let l = create_carousel_with_orientation(&conn, "wide-deck", Orientation::Landscape)
+            .unwrap();
+        assert_eq!(l.orientation, Orientation::Landscape);
+
+        // Toggle back and forth.
+        update_carousel_orientation(&conn, &v.id, Orientation::Landscape).unwrap();
+        let v_after = get_carousel(&conn, &v.id).unwrap().unwrap();
+        assert_eq!(v_after.orientation, Orientation::Landscape);
+
+        update_carousel_orientation(&conn, &l.id, Orientation::Vertical).unwrap();
+        let l_after = get_carousel(&conn, &l.id).unwrap().unwrap();
+        assert_eq!(l_after.orientation, Orientation::Vertical);
+    }
+
+    #[test]
+    fn carousel_orientation_check_constraint_rejects_garbage() {
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "checkme").unwrap();
+        let res = conn.execute(
+            "UPDATE carousels SET orientation = 'square' WHERE id = ?1",
+            params![c.id],
+        );
+        assert!(
+            res.is_err(),
+            "CHECK constraint should reject orientations outside ('vertical','landscape')"
+        );
+    }
+
+    #[test]
+    fn duplicate_carousel_copies_orientation() {
+        let mut conn = open_in_memory().unwrap();
+        let src =
+            create_carousel_with_orientation(&conn, "source-wide", Orientation::Landscape).unwrap();
+        let dup = duplicate_carousel(&mut conn, &src.id).unwrap();
+        assert_eq!(dup.orientation, Orientation::Landscape);
     }
 
     #[test]

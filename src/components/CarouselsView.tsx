@@ -3,9 +3,10 @@ import { Copy, Plus, Trash2 } from "lucide-react";
 
 import { CarouselEditor } from "@/components/CarouselEditor";
 import { GenerationProgressView } from "@/components/GenerationProgressView";
+import { OrientationToggle } from "@/components/OrientationToggle";
 import { Button } from "@/components/ui/button";
 import { useCarousels } from "@/hooks/useCarousels";
-import type { Carousel } from "@/lib/types";
+import type { Carousel, Orientation } from "@/lib/types";
 
 export function CarouselsView() {
   const {
@@ -17,6 +18,7 @@ export function CarouselsView() {
     remove,
     duplicate,
     updateModels,
+    updateOrientation,
   } = useCarousels();
   const [editingId, setEditingId] = useState<string | null>(null);
   // When set, takes over the screen with the run-progress view. We keep
@@ -27,6 +29,9 @@ export function CarouselsView() {
   );
   const [composing, setComposing] = useState(false);
   const [draftLabel, setDraftLabel] = useState("");
+  const [draftOrientation, setDraftOrientation] = useState<Orientation>(
+    "vertical",
+  );
 
   if (progressCarousel) {
     return (
@@ -47,6 +52,7 @@ export function CarouselsView() {
         onUpdateModels={(impl, manager) =>
           updateModels(editingId, impl, manager)
         }
+        onUpdateOrientation={(o) => updateOrientation(editingId, o)}
         onBack={() => setEditingId(null)}
         onGenerationActive={setProgressCarousel}
       />
@@ -58,11 +64,13 @@ export function CarouselsView() {
     if (!label) {
       setComposing(false);
       setDraftLabel("");
+      setDraftOrientation("vertical");
       return;
     }
     try {
-      await create(label);
+      await create(label, draftOrientation);
       setDraftLabel("");
+      setDraftOrientation("vertical");
       setComposing(false);
     } catch (e: unknown) {
       // Error is also surfaced via the hook's `error` state (banner) so the
@@ -116,10 +124,15 @@ export function CarouselsView() {
             onBlur={() => {
               if (!draftLabel.trim()) {
                 setComposing(false);
+                setDraftOrientation("vertical");
               }
             }}
             placeholder="Carousel name"
             className="flex-1 h-8 rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+          <OrientationToggle
+            value={draftOrientation}
+            onChange={setDraftOrientation}
           />
           <Button variant="default" size="sm" type="submit">
             Create
@@ -131,6 +144,7 @@ export function CarouselsView() {
             onClick={() => {
               setComposing(false);
               setDraftLabel("");
+              setDraftOrientation("vertical");
             }}
           >
             Cancel

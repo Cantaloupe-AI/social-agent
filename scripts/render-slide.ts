@@ -4,8 +4,18 @@ import { mkdir } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
 import puppeteer from "puppeteer-core";
 
-const SLIDE_WIDTH_PX = 1080;
-const SLIDE_HEIGHT_PX = 1350;
+/**
+ * Per-orientation native canvas dimensions. The renderer reads the
+ * carousel's orientation column and picks one of these for the puppeteer
+ * viewport, screenshot clip, and PDF page size — matching the body
+ * dimensions the implementation agent emits.
+ */
+export const ORIENTATION_DIMS = {
+  vertical: { widthPx: 1080, heightPx: 1350 },
+  landscape: { widthPx: 1920, heightPx: 1080 },
+} as const;
+
+export type Orientation = keyof typeof ORIENTATION_DIMS;
 
 const CHROME_CANDIDATES = [
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -36,6 +46,11 @@ export async function renderSlide(opts: {
   pngPath: string;
   pdfPath: string;
   chromePath?: string;
+  /**
+   * Carousel orientation. Defaults to `vertical` so callers that
+   * predate the landscape feature keep producing 1080×1350 output.
+   */
+  orientation?: Orientation;
 }): Promise<RenderResult> {
   const htmlPath = isAbsolute(opts.htmlPath)
     ? opts.htmlPath
@@ -50,6 +65,7 @@ export async function renderSlide(opts: {
   await mkdir(dirname(pdfPath), { recursive: true });
 
   const executablePath = opts.chromePath ?? resolveChromePath();
+  const { widthPx, heightPx } = ORIENTATION_DIMS[opts.orientation ?? "vertical"];
 
   const browser = await puppeteer.launch({
     executablePath,
@@ -60,8 +76,8 @@ export async function renderSlide(opts: {
   try {
     const page = await browser.newPage();
     await page.setViewport({
-      width: SLIDE_WIDTH_PX,
-      height: SLIDE_HEIGHT_PX,
+      width: widthPx,
+      height: heightPx,
       deviceScaleFactor: 2,
     });
     await page.goto(`file://${htmlPath}`, { waitUntil: "networkidle0" });
@@ -71,13 +87,13 @@ export async function renderSlide(opts: {
     await page.screenshot({
       path: pngPath as `${string}.png`,
       type: "png",
-      clip: { x: 0, y: 0, width: SLIDE_WIDTH_PX, height: SLIDE_HEIGHT_PX },
+      clip: { x: 0, y: 0, width: widthPx, height: heightPx },
     });
 
     await page.pdf({
       path: pdfPath,
-      width: `${SLIDE_WIDTH_PX}px`,
-      height: `${SLIDE_HEIGHT_PX}px`,
+      width: `${widthPx}px`,
+      height: `${heightPx}px`,
       printBackground: true,
       pageRanges: "1",
       preferCSSPageSize: false,
@@ -94,15 +110,26 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length < 3) {
     console.error(
-      "Usage: bun run scripts/render-slide.ts <input.html> <out.png> <out.pdf>",
+      "Usage: bun run scripts/render-slide.ts <input.html> <out.png> <out.pdf> [orientation]",
     );
     process.exit(1);
   }
-  const [input, outPng, outPdf] = args;
+  const [input, outPng, outPdf, orientationArg] = args;
+  let orientation: Orientation | undefined;
+  if (orientationArg) {
+    if (orientationArg !== "vertical" && orientationArg !== "landscape") {
+      console.error(
+        `Unknown orientation: ${orientationArg} (expected vertical|landscape)`,
+      );
+      process.exit(1);
+    }
+    orientation = orientationArg;
+  }
   const result = await renderSlide({
     htmlPath: input,
     pngPath: outPng,
     pdfPath: outPdf,
+    orientation,
   });
   console.log(JSON.stringify(result, null, 2));
 }

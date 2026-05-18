@@ -17,9 +17,39 @@ open src-tauri/target/debug/bundle/macos/Cantalog.app
 ## Tests
 
 ```bash
-cd src-tauri && cargo test  # Rust backend (28 tests)
-bun run vitest run          # Frontend hooks + helpers (13 tests)
+cd src-tauri && cargo test  # Rust backend (78 tests)
+bun run vitest run          # Frontend hooks + helpers (25 tests)
 ```
+
+## CLI (`cantalog-cli`)
+
+A scriptable surface over the same SQLite/bun pipeline the app uses — handy
+for testing the generation loop and for other agents. Dev invocation:
+
+```bash
+cd src-tauri
+cargo run -q --bin cantalog-cli -- <command>
+# or build it once: cargo build --release --bin cantalog-cli
+#   → src-tauri/target/release/cantalog-cli
+
+cantalog-cli carousel create --label "Launch week" [--orientation vertical|landscape]
+cantalog-cli carousel list
+cantalog-cli slide add <carousel-id> --file slide.md  # or --stdin / --content "…"  [--title T]
+cantalog-cli import --new --file deck.md              # splits on `# Slide …` blocks
+cantalog-cli import --carousel <id> --file deck.md    # append to an existing carousel
+cantalog-cli generate <carousel-id>                   # blocks, streams logs, opens the PDF
+cantalog-cli status <carousel-id> [--log 40] [--watch]
+cantalog-cli open <carousel-id>                       # open the generated PDF
+```
+
+`generate` runs headless: it supervises the bun driver, prints its output
+live, and opens the finished PDF (`--no-open` to skip). It reads/writes the
+same `db.sqlite` as the app, so a carousel made here shows up in the UI and
+vice-versa. `generate` is always blocking and supervised; Ctrl-C cancels the
+run; a hard kill before it finalizes may leave the carousel `generating`
+until the next `generate` (which resets run state). For async use, background
+the command at the shell. Only `import` deck files you wrote/reviewed (their
+text is fed to the design agent).
 
 ## Where data lives
 

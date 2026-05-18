@@ -70,7 +70,10 @@
   <backend root="src-tauri/src/">
     <file path="lib.rs">Module tree + Tauri builder + plugin + handler registration.</file>
     <file path="main.rs">Delegates to cantalog_lib::run.</file>
-    <file path="commands.rs">Tauri commands (thin wrappers).</file>
+    <file path="commands.rs">Tauri commands (thin wrappers); generate_carousel_pdf parks the child + watcher, delegates the core to generation.rs.</file>
+    <file path="generation.rs">Tauri-free generation core shared by the Tauri command and cantalog-cli: repo_root, next_run_dir, spawn_pipe_tee, prepare_run, spawn_driver, finalize. The ONE place run-dir naming + the crash-finalize safety net live.</file>
+    <file path="cli.rs">cantalog-cli handlers (pure, Result-returning): parse_deck, cmd_carousel_*, cmd_slide_add, cmd_import, cmd_status, cmd_open, cmd_generate. Injected stdin/opener for tests.</file>
+    <file path="bin/cantalog-cli.rs">Thin clap parser over cli.rs. `cargo run --bin cantalog-cli -- …`.</file>
     <file path="config.rs">TOML load/save + default_config.</file>
     <file path="db.rs">open / migrate / save_entry / load_entry + carousel+slide CRUD.</file>
     <file path="types.rs">Activity, Entry, Config, ActivitySource, GitConfig, ClaudeCodeConfig.</file>
@@ -99,10 +102,10 @@
     <p>No mocks where a parameter will do. Inject time/paths; don't monkey-patch globals.</p>
     <p>Fixtures live next to the code they exercise: src-tauri/tests/fixtures/{git,claude}/.</p>
   </principles>
-  <counts as_of="2026-04-19">
-    <rust>28 tests across config.rs, db.rs, sources/git.rs, sources/claude_code.rs.</rust>
-    <typescript>13 tests across hooks/ and lib/.</typescript>
-    <total>41.</total>
+  <counts as_of="2026-05-18">
+    <rust>78 tests (cargo test) across config.rs, db.rs, generation.rs (8), cli.rs (17), sources/git.rs, sources/claude_code.rs.</rust>
+    <typescript>25 tests (bun run vitest run) across hooks/ and lib/.</typescript>
+    <total>103.</total>
   </counts>
   <commands>
     <cmd purpose="rust">cd src-tauri &amp;&amp; cargo test</cmd>
@@ -222,3 +225,32 @@
     `getCurrentWindow().close()` without understanding why.
   </item>
 </gotchas>
+
+<!-- hippo:start -->
+## Project Memory (Hippo)
+
+Before starting work, load relevant context:
+```bash
+hippo context --auto --budget 1500
+```
+
+When you learn something important:
+```bash
+hippo remember "<lesson>"
+```
+
+When you hit an error or discover a gotcha:
+```bash
+hippo remember "<what went wrong and why>" --error
+```
+
+After significant discussions or decisions, capture context:
+```bash
+hippo capture --stdin <<< 'summary of what was decided'
+```
+
+After completing work successfully:
+```bash
+hippo outcome --good
+```
+<!-- hippo:end -->

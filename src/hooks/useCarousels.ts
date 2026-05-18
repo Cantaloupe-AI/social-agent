@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Carousel } from "@/lib/types";
+import type { Carousel, Orientation } from "@/lib/types";
 import {
   createCarousel as createCarouselCmd,
   deleteCarousel as deleteCarouselCmd,
@@ -7,6 +7,7 @@ import {
   listCarousels,
   renameCarousel as renameCarouselCmd,
   updateCarouselModels as updateCarouselModelsCmd,
+  updateCarouselOrientation as updateCarouselOrientationCmd,
 } from "@/lib/tauri";
 
 export interface UseCarouselsResult {
@@ -14,7 +15,7 @@ export interface UseCarouselsResult {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  create: (label: string) => Promise<Carousel>;
+  create: (label: string, orientation?: Orientation) => Promise<Carousel>;
   rename: (id: string, label: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   duplicate: (id: string) => Promise<Carousel>;
@@ -23,6 +24,7 @@ export interface UseCarouselsResult {
     implModel: string | null,
     managerModel: string | null,
   ) => Promise<void>;
+  updateOrientation: (id: string, orientation: Orientation) => Promise<void>;
 }
 
 export function useCarousels(): UseCarouselsResult {
@@ -64,17 +66,20 @@ export function useCarousels(): UseCarouselsResult {
     };
   }, []);
 
-  const create = useCallback(async (label: string): Promise<Carousel> => {
-    try {
-      const c = await createCarouselCmd(label);
-      setCarousels((prev) => [c, ...prev]);
-      setError(null);
-      return c;
-    } catch (e: unknown) {
-      setError(String(e));
-      throw e;
-    }
-  }, []);
+  const create = useCallback(
+    async (label: string, orientation?: Orientation): Promise<Carousel> => {
+      try {
+        const c = await createCarouselCmd(label, orientation);
+        setCarousels((prev) => [c, ...prev]);
+        setError(null);
+        return c;
+      } catch (e: unknown) {
+        setError(String(e));
+        throw e;
+      }
+    },
+    [],
+  );
 
   const rename = useCallback(async (id: string, label: string) => {
     try {
@@ -165,6 +170,51 @@ export function useCarousels(): UseCarouselsResult {
     [],
   );
 
+  const updateOrientation = useCallback(
+    async (id: string, orientation: Orientation) => {
+      // Optimistic update mirrors `updateModels`: flip local state, fire
+      // the command, revert via re-fetch on failure.
+      const prev = carousels.find((c) => c.id === id)?.orientation;
+      setCarousels((cs) =>
+        cs.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                orientation,
+                updated_at: new Date().toISOString(),
+              }
+            : c,
+        ),
+      );
+      try {
+        await updateCarouselOrientationCmd(id, orientation);
+        setError(null);
+      } catch (e: unknown) {
+        console.error("cantalog: updateCarouselOrientation failed", e);
+        setError(String(e));
+        if (prev !== undefined) {
+          setCarousels((cs) =>
+            cs.map((c) => (c.id === id ? { ...c, orientation: prev } : c)),
+          );
+        } else {
+          // If we couldn't snapshot the prior value, refetch the
+          // authoritative list so the UI doesn't drift.
+          try {
+            const xs = await listCarousels();
+            setCarousels(xs);
+          } catch (refreshErr) {
+            console.error(
+              "cantalog: refetch after failed updateOrientation also failed",
+              refreshErr,
+            );
+          }
+        }
+        throw e;
+      }
+    },
+    [carousels],
+  );
+
   return {
     carousels,
     loading,
@@ -175,5 +225,6 @@ export function useCarousels(): UseCarouselsResult {
     remove,
     duplicate,
     updateModels,
+    updateOrientation,
   };
 }

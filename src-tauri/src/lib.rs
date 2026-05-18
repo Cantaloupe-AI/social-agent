@@ -1,6 +1,8 @@
+pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod generation;
 pub mod sources;
 pub mod types;
 
@@ -22,6 +24,7 @@ pub fn run() {
             commands::delete_carousel,
             commands::duplicate_carousel,
             commands::update_carousel_models,
+            commands::update_carousel_orientation,
             commands::list_slides,
             commands::create_slide,
             commands::update_slide_content,

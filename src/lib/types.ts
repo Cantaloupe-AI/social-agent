@@ -33,6 +33,14 @@ export interface Config {
 
 export type CarouselStatus = "idle" | "generating" | "done" | "failed";
 
+/**
+ * Per-carousel canvas orientation. Drives the renderer (puppeteer
+ * viewport + PDF page size) and the agents' design-spec branch. Mirrors
+ * the Rust `Orientation` enum — `vertical` is 1080×1350, `landscape` is
+ * 1920×1080.
+ */
+export type Orientation = "vertical" | "landscape";
+
 export type SlideStatus =
   | "idle"
   | "queued"
@@ -60,6 +68,13 @@ export interface Carousel {
    */
   impl_model: string | null;
   manager_model: string | null;
+  /**
+   * Canvas orientation. The DB column is NOT NULL with DEFAULT
+   * 'vertical', so legacy rows and any insert that omits orientation
+   * read back as `"vertical"`. The renderer + agents always have a
+   * concrete value to act on.
+   */
+  orientation: Orientation;
 }
 
 export interface Slide {

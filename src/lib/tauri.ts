@@ -4,6 +4,7 @@ import type {
   Carousel,
   Config,
   Entry,
+  Orientation,
   Slide,
   SlideFeedback,
   SlideVersion,
@@ -60,8 +61,17 @@ export async function getCarousel(id: string): Promise<Carousel | null> {
   return call<Carousel | null>("get_carousel", { id });
 }
 
-export async function createCarousel(label: string): Promise<Carousel> {
-  return call<Carousel>("create_carousel", { label });
+export async function createCarousel(
+  label: string,
+  orientation?: Orientation,
+): Promise<Carousel> {
+  // Pass `orientation` as `null` when omitted so the Rust side picks
+  // its `Vertical` default rather than receiving `undefined` (which
+  // serde would reject as a malformed `Option<String>`).
+  return call<Carousel>("create_carousel", {
+    label,
+    orientation: orientation ?? null,
+  });
 }
 
 export async function renameCarousel(id: string, label: string): Promise<void> {
@@ -86,6 +96,13 @@ export async function updateCarouselModels(
     implModel,
     managerModel,
   });
+}
+
+export async function updateCarouselOrientation(
+  id: string,
+  orientation: Orientation,
+): Promise<void> {
+  await call<void>("update_carousel_orientation", { id, orientation });
 }
 
 export async function listSlides(carouselId: string): Promise<Slide[]> {

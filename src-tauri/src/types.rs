@@ -81,6 +81,30 @@ impl CarouselStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum Orientation {
+    Vertical,
+    Landscape,
+}
+
+impl Orientation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Orientation::Vertical => "vertical",
+            Orientation::Landscape => "landscape",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "vertical" => Some(Orientation::Vertical),
+            "landscape" => Some(Orientation::Landscape),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SlideStatus {
     Idle,
     Queued,
@@ -135,6 +159,12 @@ pub struct Carousel {
     /// Model id for the manager (review) agent. Same `None` semantics
     /// as `impl_model`.
     pub manager_model: Option<String>,
+    /// Per-carousel canvas orientation. Drives the renderer (puppeteer
+    /// viewport + PDF page size) and the agents (which `landscape` or
+    /// `vertical` branch of the design spec to follow). The DB column
+    /// is NOT NULL with DEFAULT 'vertical', so older rows and
+    /// no-orientation inserts naturally read back as Vertical.
+    pub orientation: Orientation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
