@@ -202,6 +202,37 @@ pub fn cmd_carousel_list(conn: &Connection) -> Result<Vec<Carousel>, String> {
     crate::db::list_carousels(conn).map_err(|e| e.to_string())
 }
 
+/// Set the per-carousel agent model overrides used by the bun driver.
+/// Unspecified args preserve the current value (so `--impl` alone does not
+/// wipe `manager_model` back to the default). Pass an empty string to clear
+/// one back to the driver default.
+pub fn cmd_carousel_set_model(
+    conn: &Connection,
+    carousel_id: &str,
+    impl_model: Option<&str>,
+    manager_model: Option<&str>,
+) -> Result<Carousel, String> {
+    let current = crate::db::get_carousel(conn, carousel_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("carousel {carousel_id} not found"))?;
+    let impl_eff = impl_model
+        .map(str::to_string)
+        .or_else(|| current.impl_model.clone());
+    let manager_eff = manager_model
+        .map(str::to_string)
+        .or_else(|| current.manager_model.clone());
+    crate::db::update_carousel_models(
+        conn,
+        carousel_id,
+        impl_eff.as_deref(),
+        manager_eff.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+    crate::db::get_carousel(conn, carousel_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "carousel disappeared after update".to_string())
+}
+
 pub fn cmd_slide_add(
     conn: &Connection,
     carousel_id: &str,
@@ -712,6 +743,40 @@ mod tests {
         let conn = open_db(&base).unwrap();
         let err = cmd_carousel_create(&conn, "X", Some("sideways")).unwrap_err();
         assert!(err.contains("invalid orientation"), "got: {err}");
+    }
+
+    #[test]
+    fn carousel_set_model_preserves_unspecified_and_errors_on_missing() {
+        let base = fresh_base_dir("setmodel");
+        let conn = open_db(&base).unwrap();
+        let c = cmd_carousel_create(&conn, "Models", None).unwrap();
+        assert_eq!(c.impl_model, None);
+        assert_eq!(c.manager_model, None);
+
+        // --impl only must NOT wipe manager_model.
+        let c1 =
+            cmd_carousel_set_model(&conn, &c.id, Some("claude-sonnet-4-6"), None).unwrap();
+        assert_eq!(c1.impl_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(c1.manager_model, None);
+
+        // Setting both (the `--both` path) sticks.
+        let c2 = cmd_carousel_set_model(
+            &conn,
+            &c.id,
+            Some("claude-sonnet-4-6"),
+            Some("claude-sonnet-4-6"),
+        )
+        .unwrap();
+        assert_eq!(c2.impl_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(c2.manager_model.as_deref(), Some("claude-sonnet-4-6"));
+
+        // Whitespace clears back to default (NULL); impl preserved.
+        let c3 = cmd_carousel_set_model(&conn, &c.id, None, Some("  ")).unwrap();
+        assert_eq!(c3.impl_model.as_deref(), Some("claude-sonnet-4-6"));
+        assert_eq!(c3.manager_model, None);
+
+        let err = cmd_carousel_set_model(&conn, "ghost", Some("x"), None).unwrap_err();
+        assert!(err.contains("not found"), "got: {err}");
     }
 
     #[test]

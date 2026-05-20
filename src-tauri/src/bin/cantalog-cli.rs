@@ -95,6 +95,23 @@ enum CarouselAction {
     },
     /// List all carousels.
     List,
+    /// Set the per-carousel agent model overrides (bun driver).
+    SetModel(SetModelArgs),
+}
+
+#[derive(Args)]
+struct SetModelArgs {
+    /// Target carousel id.
+    carousel_id: String,
+    /// Set BOTH agents to this model id (shortcut for --impl + --manager).
+    #[arg(long)]
+    both: Option<String>,
+    /// Implementation-agent model id (e.g. claude-sonnet-4-6).
+    #[arg(long = "impl")]
+    impl_model: Option<String>,
+    /// Manager-agent model id.
+    #[arg(long = "manager")]
+    manager_model: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -189,6 +206,27 @@ fn run() -> Result<(), String> {
                     c.label,
                     c.slug.as_deref().unwrap_or("-"),
                     c.orientation.as_str()
+                );
+            }
+            CarouselAction::SetModel(a) => {
+                let (im, mm) = if let Some(b) = a.both.as_deref() {
+                    (Some(b), Some(b))
+                } else {
+                    (a.impl_model.as_deref(), a.manager_model.as_deref())
+                };
+                if im.is_none() && mm.is_none() {
+                    return Err(
+                        "provide --both <model>, or --impl <model> / --manager <model>"
+                            .into(),
+                    );
+                }
+                let conn = cli::open_db(&base_dir()?)?;
+                let c = cli::cmd_carousel_set_model(&conn, &a.carousel_id, im, mm)?;
+                println!(
+                    "carousel {} models updated\n  impl:    {}\n  manager: {}",
+                    c.id,
+                    c.impl_model.as_deref().unwrap_or("(driver default)"),
+                    c.manager_model.as_deref().unwrap_or("(driver default)")
                 );
             }
             CarouselAction::List => {
