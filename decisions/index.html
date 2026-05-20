@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Decision review — plate-chart (Charts.css)</title>
+<style>
+  :root{
+    --surface:#E8EBE2; --panel:#F4F6F0; --ink:#0B140F; --dim:#525B55;
+    --primary:#055031; --warning:#FBA100; --line:#0B140F1a; --good:#055031;
+    --revise:#A16100; --reject:#854272;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--surface);color:var(--ink);font-family:var(--sans);
+       line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--primary)}
+  code,.mono{font-family:var(--mono);font-size:.92em}
+  .wrap{max-width:920px;margin:0 auto;padding:0 24px 120px}
+
+  header.top{position:sticky;top:0;z-index:20;background:var(--surface);
+    border-bottom:1px solid var(--line);backdrop-filter:saturate(1.1)}
+  .topbar{max-width:920px;margin:0 auto;padding:12px 24px;display:flex;
+    gap:10px;align-items:center;flex-wrap:wrap}
+  .topbar .grow{flex:1 1 auto}
+  button{font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;
+    border:1px solid var(--ink);background:transparent;color:var(--ink);
+    padding:8px 14px;border-radius:8px;transition:.12s}
+  button:hover{background:var(--ink);color:var(--surface)}
+  button.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  button.primary:hover{filter:brightness(1.12)}
+  button.ghost{border-color:var(--line);color:var(--dim)}
+  .status{font-size:12px;color:var(--dim)}
+  .status b{color:var(--primary)}
+
+  .hero{padding:48px 0 8px}
+  .kicker{font-size:12px;font-weight:700;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--primary)}
+  h1{font-size:40px;line-height:1.08;font-weight:800;letter-spacing:-.02em;
+    margin:10px 0 12px}
+  .lede{font-size:18px;color:var(--dim);max-width:64ch}
+  h2{font-size:13px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--primary);margin:48px 0 16px;padding-bottom:8px;
+    border-bottom:1px solid var(--line)}
+
+  table.changes{width:100%;border-collapse:collapse;font-size:14px}
+  table.changes th,table.changes td{text-align:left;padding:12px 12px;
+    border-bottom:1px solid var(--line);vertical-align:top}
+  table.changes th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim)}
+  table.changes td.f{font-family:var(--mono);font-size:12px;white-space:nowrap}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px 22px 18px;margin:16px 0}
+  .card .id{font-family:var(--mono);font-size:12px;color:var(--primary);
+    font-weight:700}
+  .card h3{font-size:20px;font-weight:800;letter-spacing:-.01em;margin:4px 0 10px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;padding:3px 9px;border-radius:999px;margin-left:8px;
+    vertical-align:2px}
+  .tag.rev{background:#A1610022;color:var(--revise)}
+  .tag.fix{background:#05503122;color:var(--primary)}
+  .tag.you{background:#FBA10033;color:var(--revise)}
+  .tag.struct{background:#0B140F12;color:var(--dim)}
+  .meta{font-size:14px;color:var(--ink);margin:8px 0}
+  .meta .lbl{font-weight:700;color:var(--dim);font-size:12px;
+    letter-spacing:.08em;text-transform:uppercase;display:block;margin-top:10px}
+  .verdict{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 10px}
+  .verdict label{font-size:13px;font-weight:600;border:1px solid var(--line);
+    border-radius:8px;padding:8px 14px;cursor:pointer;user-select:none;
+    background:#fff8}
+  .verdict input{position:absolute;opacity:0;width:0;height:0}
+  .verdict label:hover{border-color:var(--ink)}
+  .verdict input:checked+span{font-weight:800}
+  .verdict label.v-approve:has(input:checked){background:var(--good);
+    color:#fff;border-color:var(--good)}
+  .verdict label.v-revise:has(input:checked){background:var(--revise);
+    color:#fff;border-color:var(--revise)}
+  .verdict label.v-reject:has(input:checked){background:var(--reject);
+    color:#fff;border-color:var(--reject)}
+  textarea{width:100%;min-height:60px;resize:vertical;font-family:var(--sans);
+    font-size:14px;color:var(--ink);background:#fff;border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;line-height:1.5}
+  textarea::placeholder{color:#9aa39c}
+
+  details.preview{margin-top:36px;border:1px solid var(--line);border-radius:12px;
+    background:var(--panel)}
+  details.preview summary{cursor:pointer;font-size:13px;font-weight:700;
+    padding:14px 18px;letter-spacing:.04em}
+  details.preview pre{margin:0;padding:0 18px 18px;font-family:var(--mono);
+    font-size:12px;overflow:auto;color:var(--dim)}
+  footer{margin-top:48px;font-size:13px;color:var(--dim);
+    border-top:1px solid var(--line);padding-top:20px}
+  .pill{font-family:var(--mono);font-size:12px;background:#0B140F0d;
+    padding:2px 7px;border-radius:6px}
+  .saved{color:var(--good)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="topbar">
+    <strong style="font-size:14px">Decision review</strong>
+    <span class="status" id="status">loading…</span>
+    <span class="grow"></span>
+    <button class="ghost" id="btn-import">Load decisions.json</button>
+    <button class="ghost" id="btn-reset">Reset</button>
+    <button class="primary" id="btn-export">Export decisions.json</button>
+    <input type="file" id="file" accept="application/json" hidden />
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <div class="kicker">Cantalog · carousel authoring</div>
+    <h1>plate-chart slide type (Charts.css)</h1>
+    <p class="lede">A new chart slide type for LinkedIn carousels, rendered
+      with the pure-CSS <strong>Charts.css</strong> framework. Below: the
+      critical changes, then every decision point. Mark each
+      <strong>Approve / Revise / Reject</strong> and leave a note — your
+      feedback autosaves to this browser and exports to
+      <span class="pill">decisions.json</span>.</p>
+  </section>
+
+  <h2>Critical changes</h2>
+  <p class="meta">Six docs/prompt files. No code, schema, or dependency
+    changes — the slide type is inferred from the
+    <code># Slide N :: plate-chart</code> markdown header, exactly like the
+    existing five types. Validated end-to-end through the real renderer
+    (<code>scripts/render-slide.ts</code> → Puppeteer → PNG/PDF).</p>
+  <table class="changes">
+    <thead><tr><th>File</th><th>What changed</th></tr></thead>
+    <tbody>
+      <tr><td class="f">design/<br>carousel-manifest.md</td>
+        <td>New <strong>§12a Charts</strong> (engine, families, plot box,
+        brand-theming table, ordered series palette, forbidden components) +
+        a Quick-reference entry + a pipeline-validation bullet.</td></tr>
+      <tr><td class="f">design/<br>carousel.manifest.json</td>
+        <td><code>slideTypes.plate-chart</code> + a top-level
+        <code>chart</code> config (pinned CDN, palette, plot box, axis,
+        forbidden components).</td></tr>
+      <tr><td class="f">design/cantaloupe.<br>design-contracts.json</td>
+        <td>New <code>chart</code> contract + a <code>stylesheets</code>
+        allow-list + the <code>color.chartPlotAreaException</code> carve-out,
+        each with <code>rejectIf</code> lists the manager enforces.</td></tr>
+      <tr><td class="f">design/<br>carousel_example.md</td>
+        <td>Appended a <strong>“Reference — plate-chart”</strong> section:
+        the authoring <code>chart:</code> block + the renderer-verified
+        HTML output.</td></tr>
+      <tr><td class="f">prompts/<br>implementation_agent.md</td>
+        <td>CDN rule amended to permit the one pinned Charts.css stylesheet;
+        added a chart hard rule + a “Charts specifics” section.</td></tr>
+      <tr><td class="f">prompts/<br>manager_agent.md</td>
+        <td><code>plate-chart</code> added to the type list + a full chart
+        validation walk (honoring the chromatic carve-out).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Decision points</h2>
+  <div id="decisions"></div>
+
+  <details class="preview">
+    <summary>Preview the JSON that will be exported</summary>
+    <pre id="json-preview"></pre>
+  </details>
+
+  <footer>
+    <p><strong>How export works.</strong> “Export decisions.json” uses the
+    File System Access API where available (Chrome/Edge) so you can save
+    straight into this <span class="pill">decisions/</span> folder;
+    otherwise it downloads <span class="pill">decisions.json</span> — move
+    it here. “Load decisions.json” re-imports a prior file to continue.
+    Schema: <span class="pill">decisions.schema.json</span>. Everything is
+    local; this page makes no network requests.</p>
+  </footer>
+</div>
+
+<script>
+const STORE_KEY = "cantalog.decisions.plate-chart";
+const GENERATED_AT = "2026-05-18";
+
+const DECISIONS = [
+  { id:"D1", tag:["rev","Revisitable"],
+    title:"Charting engine: Charts.css via a pinned CDN link",
+    context:"Charts are semantic <table>s styled by Charts.css (pure CSS). The stylesheet is loaded with one CDN <link>, exactly like the Google Fonts the slides already load (the renderer waits for networkidle0).",
+    rationale:"No JavaScript, no vendoring, and the framework — not the agent — owns the chart geometry, so it is far more accurate than hand-drawn SVG.",
+    tradeoff:"Adds a render-time network dependency on jsDelivr and a narrow amendment to the agent's old “no CDN beyond Google Fonts” rule. Fallback if hermetic/offline rendering is needed: inline the CSS." },
+
+  { id:"D2", tag:["fix","Recommended"],
+    title:"Pin to charts.css@1.2.0 (not the floating tag)",
+    context:"The <link> URL is version-pinned to @1.2.0 (MIT, ~60 KB, confirmed 200).",
+    rationale:"A floating `charts.css` URL would silently drift to a new major and could break renders without warning — against the project's no-silent-failures ethos.",
+    tradeoff:"Manual bump needed to adopt future Charts.css versions." },
+
+  { id:"D3", tag:["struct","You confirmed"],
+    title:"Coverage: Charts.css families only, with graceful fallback",
+    context:"Supported: bar, column, line, area, pie (incl. stacked / multi-series). Not supported: scatter, slope, waterfall, bubble, sankey, etc.",
+    rationale:"You chose this in planning: if data fits no Charts.css family, the agent falls back to plate-list or a styled table rather than forcing a bad chart.",
+    tradeoff:"Exotic chart types are simply unavailable by design (covers the vast majority of real carousel charts)." },
+
+  { id:"D4", tag:["you","Claude's call · revisitable"],
+    title:"Multi-series color: ordered brand palette + plot-area exemption",
+    context:"Series colors come from an ordered palette — primary → warning → secondary → complement — and the chart plot area is exempted from the hard “max 2 chromatic colors per slide” contract.",
+    rationale:"Real multi-series charts need >2 hues. The exemption is scoped to the plot area only; headline, body, chrome and all axis/label text still obey the 2-chromatic rule and stay ink/ink-dim.",
+    tradeoff:"If multi-series brand colors read off-brand in practice, the fallback is single-hue tints. You did not explicitly pick this in planning — flagging for confirmation." },
+
+  { id:"D5", tag:["struct","Claude's call"],
+    title:"Type named “plate-chart” (not “chart”)",
+    context:"Named to match the existing plate-* family (plate, plate-code, plate-list).",
+    rationale:"It inherits all plate chrome unchanged — header logo, folio, colophon, rules, surface, safe zones — with an optional title-sm headline; only the body region becomes the chart.",
+    tradeoff:"None significant; purely a naming/consistency choice." },
+
+  { id:"D6", tag:["struct","Structural"],
+    title:"No DB / schema / type / dependency changes",
+    context:"Slide type is inferred from the markdown header, so this is purely docs + prompt changes.",
+    rationale:"Matches how the existing five types work; zero migration risk; honors the project's tight-dependency policy.",
+    tradeoff:"The type catalog lives in the spec/prompts, not in a typed enum — same as today." },
+
+  { id:"D7", tag:["fix","Found in verification"],
+    title:"Series key = plain brand HTML, not the Charts.css legend component",
+    context:"During the real render, the Charts.css <ul class=\"legend\"> proved hard to brand (it colored from --color-1..N and broke layout with legend-inline).",
+    rationale:"The example and spec now build the series key from plain brand HTML (swatch + label). Models the right pattern: use Charts.css for the plot, build chrome yourself.",
+    tradeoff:"Slightly more markup per chart, but reliable and on-brand." },
+
+  { id:"D8", tag:["fix","Found in verification"],
+    title:"Explicit chart table height required",
+    context:"`height: 100%` does not propagate in Charts.css; the chart rendered short until an explicit `height` was set.",
+    rationale:"Spec + example now mandate an explicit table height (e.g. height: 600px) sized to the plot box.",
+    tradeoff:"The author/agent must compute a concrete height on the 8 px grid." },
+
+  { id:"D9", tag:["struct","Plan correction"],
+    title:"Did NOT edit prompts/meta_feedback.md",
+    context:"The earlier plan listed it; on inspection it is an append-only agent log (“do not edit existing entries”).",
+    rationale:"The “when to use a chart” guidance went into manifest §12a instead — the correct home.",
+    tradeoff:"None; this corrected a misstep in the original plan." },
+
+  { id:"D10", tag:["you","Claude's call"],
+    title:"Forbidden Charts.css components for static PDF",
+    context:"3D effects, animation/motion, tooltips, and hover-only data (show-data-on-hover) are disallowed.",
+    rationale:"The output is a single static screenshot — interactive/animated components are meaningless or capture mid-frame; all data must be statically visible.",
+    tradeoff:"Some Charts.css eye-candy is unavailable (intentionally)." },
+];
+
+const CHANGE_NOTES = [
+  {id:"C1", file:"design/carousel-manifest.md"},
+  {id:"C2", file:"design/carousel.manifest.json"},
+  {id:"C3", file:"design/cantaloupe.design-contracts.json"},
+  {id:"C4", file:"design/carousel_example.md"},
+  {id:"C5", file:"prompts/implementation_agent.md"},
+  {id:"C6", file:"prompts/manager_agent.md"},
+];
+
+let state = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return { decisions:{}, generalComment:"" };
+}
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+  renderStatus(); renderPreview();
+}
+
+const TAGCLS = {rev:"rev",fix:"fix",you:"you",struct:"struct"};
+
+function el(html){ const t=document.createElement("template");
+  t.innerHTML=html.trim(); return t.content.firstChild; }
+
+function renderDecisions(){
+  const root = document.getElementById("decisions");
+  root.innerHTML = "";
+  for(const d of DECISIONS){
+    const s = state.decisions[d.id] || {verdict:"",comment:""};
+    const card = el(`<div class="card" id="card-${d.id}">
+      <div class="id">${d.id}</div>
+      <h3>${d.title}<span class="tag ${TAGCLS[d.tag[0]]}">${d.tag[1]}</span></h3>
+      <div class="meta"><span class="lbl">Context</span>${d.context}</div>
+      <div class="meta"><span class="lbl">Why</span>${d.rationale}</div>
+      <div class="meta"><span class="lbl">Trade-off</span>${d.tradeoff}</div>
+      <span class="lbl">Your verdict</span>
+      <div class="verdict" role="radiogroup" aria-label="${d.id} verdict">
+        <label class="v-approve"><input type="radio" name="v-${d.id}" value="approve"><span>✓ Approve</span></label>
+        <label class="v-revise"><input type="radio" name="v-${d.id}" value="revise"><span>✎ Revise</span></label>
+        <label class="v-reject"><input type="radio" name="v-${d.id}" value="reject"><span>✕ Reject</span></label>
+      </div>
+      <textarea placeholder="Notes, requested changes, questions…">${escapeHtml(s.comment)}</textarea>
+    </div>`);
+    const radios = card.querySelectorAll(`input[name="v-${d.id}"]`);
+    radios.forEach(r=>{
+      if(r.value===s.verdict) r.checked=true;
+      r.addEventListener("change",()=>{
+        state.decisions[d.id]=state.decisions[d.id]||{verdict:"",comment:""};
+        state.decisions[d.id].verdict=r.value; save();
+      });
+    });
+    const ta = card.querySelector("textarea");
+    ta.addEventListener("input",()=>{
+      state.decisions[d.id]=state.decisions[d.id]||{verdict:"",comment:""};
+      state.decisions[d.id].comment=ta.value; save();
+    });
+    root.appendChild(card);
+  }
+}
+
+function escapeHtml(s){ return (s||"").replace(/[&<>"]/g,
+  c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function buildExport(){
+  return {
+    project:"cantalog",
+    topic:"plate-chart (Charts.css) slide type",
+    generatedAt:GENERATED_AT,
+    exportedAt:new Date().toISOString(),
+    summary:counts(),
+    decisions:DECISIONS.map(d=>{
+      const s=state.decisions[d.id]||{};
+      return { id:d.id, title:d.title,
+        verdict:s.verdict||"undecided", comment:s.comment||"" };
+    }),
+    changeNotes:CHANGE_NOTES.map(c=>{
+      const s=state.decisions[c.id]||{};
+      return { id:c.id, file:c.file, comment:s.comment||"" };
+    }),
+    generalComment: state.generalComment||""
+  };
+}
+
+function counts(){
+  let a=0,r=0,x=0,u=0;
+  for(const d of DECISIONS){
+    const v=(state.decisions[d.id]||{}).verdict;
+    if(v==="approve")a++; else if(v==="revise")r++;
+    else if(v==="reject")x++; else u++;
+  }
+  return {total:DECISIONS.length,approve:a,revise:r,reject:x,undecided:u};
+}
+
+function renderStatus(){
+  const c=counts();
+  document.getElementById("status").innerHTML =
+    `<b>${c.approve}</b> approved · <b>${c.revise}</b> revise · `+
+    `<b>${c.reject}</b> reject · ${c.undecided} undecided `+
+    `<span class="saved">· autosaved</span>`;
+}
+function renderPreview(){
+  document.getElementById("json-preview").textContent =
+    JSON.stringify(buildExport(),null,2);
+}
+
+async function exportJson(){
+  const data = JSON.stringify(buildExport(),null,2);
+  if(window.showSaveFilePicker){
+    try{
+      const h = await window.showSaveFilePicker({
+        suggestedName:"decisions.json",
+        types:[{description:"JSON",accept:{"application/json":[".json"]}}]
+      });
+      const w = await h.createWritable();
+      await w.write(data); await w.close();
+      flash("Saved ✓"); return;
+    }catch(e){ if(e && e.name==="AbortError") return; }
+  }
+  const blob=new Blob([data],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="decisions.json"; a.click();
+  URL.revokeObjectURL(url);
+  flash("Downloaded — move it into /decisions");
+}
+
+function flash(msg){
+  const s=document.getElementById("status");
+  const prev=s.innerHTML; s.innerHTML=`<b class="saved">${msg}</b>`;
+  setTimeout(()=>renderStatus(),2200);
+}
+
+function importJson(file){
+  const fr=new FileReader();
+  fr.onload=()=>{
+    try{
+      const obj=JSON.parse(fr.result);
+      const next={decisions:{},generalComment:obj.generalComment||""};
+      (obj.decisions||[]).forEach(d=>{
+        next.decisions[d.id]={verdict:d.verdict==="undecided"?"":(d.verdict||""),
+          comment:d.comment||""};
+      });
+      (obj.changeNotes||[]).forEach(c=>{
+        if(c.comment) next.decisions[c.id]={verdict:"",comment:c.comment};
+      });
+      state=next; save(); renderDecisions();
+      flash("Loaded decisions.json ✓");
+    }catch(e){ alert("Could not parse that file as decisions.json"); }
+  };
+  fr.readAsText(file);
+}
+
+document.getElementById("btn-export").addEventListener("click",exportJson);
+document.getElementById("btn-reset").addEventListener("click",()=>{
+  if(confirm("Clear all verdicts and comments on this page?")){
+    state={decisions:{},generalComment:""}; save(); renderDecisions();
+  }
+});
+document.getElementById("btn-import").addEventListener("click",()=>
+  document.getElementById("file").click());
+document.getElementById("file").addEventListener("change",e=>{
+  if(e.target.files[0]) importJson(e.target.files[0]);
+  e.target.value="";
+});
+
+renderDecisions(); renderStatus(); renderPreview();
+</script>
+</body>
+</html>
