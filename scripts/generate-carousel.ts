@@ -90,6 +90,20 @@ const MAX_ITERS = 4;
  */
 const SDK_IDLE_TIMEOUT_MS = 240_000;
 
+/**
+ * Idle window used while the stream is in the *throttled* regime — see the
+ * `throttled` flag in `driveAgent`. A `rate_limit_event` enters that regime;
+ * the SDK then emits sparse internal retry `system` messages every 1–4 min
+ * (no forward progress) until the 429 clears. Observed on kitchen-sink
+ * run-6 slide 1: 19 such messages over ~33 min, then a >240 s gap that
+ * killed a still-alive slide because each retry `system` re-armed the
+ * short guard. Keying the long window off the throttled *state* (not just
+ * the rate_limit_event message) lets those retries ride out; the state
+ * clears on the first real forward-progress message, restoring the tight
+ * dead-air guard. 15 min still backstops a genuinely dead throttled stream.
+ */
+const SDK_RATE_LIMIT_IDLE_TIMEOUT_MS = 900_000;
+
 // ─── DB helpers ─────────────────────────────────────────────────────────────
 
 interface CarouselRow {
@@ -382,15 +396,15 @@ async function driveAgent(opts: {
   // stream has gone silent — abort the query and surface a clear error.
   let watchdogTripped = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  const armWatchdog = () => {
+  const armWatchdog = (ms: number) => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       watchdogTripped = true;
       process.stderr.write(
-        `  [sdk:${opts.label}] idle watchdog: no message in ${SDK_IDLE_TIMEOUT_MS}ms — aborting\n`,
+        `  [sdk:${opts.label}] idle watchdog: no message in ${ms}ms — aborting\n`,
       );
       abortController.abort();
-    }, SDK_IDLE_TIMEOUT_MS);
+    }, ms);
   };
   const disarmWatchdog = () => {
     if (idleTimer) {
@@ -403,17 +417,40 @@ async function driveAgent(opts: {
   // silent. Per CLAUDE.md §conventions/errors: no silent failures.
   // We don't dump full content (that would flood the log on long thinking
   // turns); just type + a short discriminator so we can see progress.
+  // Throttled regime: a `rate_limit_event` means the SDK is now backing
+  // off a 429 and will emit only sparse internal retry `system` messages
+  // (no forward progress) until it clears. While throttled we arm the
+  // long window on *every* message so those retries don't re-arm the tight
+  // guard and kill a still-alive slide (run-6 slide 1: 19 retry `system`s
+  // over ~33 min, then a >240 s gap tripped the short timer). The first
+  // real forward-progress message (assistant/user/result) means the 429
+  // cleared — drop back to the tight dead-air guard. `system` messages
+  // leave the regime unchanged (init burst at start is harmless: not yet
+  // throttled, and it arrives sub-second).
+  let throttled = false;
   try {
-    armWatchdog();
+    armWatchdog(SDK_IDLE_TIMEOUT_MS);
     for await (const msg of q) {
-      armWatchdog();
       messageCount++;
+      const msgType = (msg as { type?: string }).type;
       process.stderr.write(
         `  [sdk:${opts.label}] #${messageCount} ${describeSdkMessage(msg)}\n`,
       );
-      if ((msg as { type?: string }).type === "result") {
+      if (msgType === "result") {
         resultMessage = msg as typeof resultMessage;
       }
+      if (msgType === "rate_limit_event") {
+        throttled = true;
+      } else if (
+        msgType === "assistant" ||
+        msgType === "user" ||
+        msgType === "result"
+      ) {
+        throttled = false;
+      }
+      armWatchdog(
+        throttled ? SDK_RATE_LIMIT_IDLE_TIMEOUT_MS : SDK_IDLE_TIMEOUT_MS,
+      );
     }
   } catch (err) {
     if (watchdogTripped) {
@@ -531,6 +568,54 @@ interface ManagerVerdict {
   feedback: string;
 }
 
+/**
+ * Parse the manager's review.json. Tolerant only of *wrapping* the model
+ * sometimes adds around otherwise-valid JSON (UTF-8 BOM, ```json fences,
+ * stray prose) — it narrows to the outer `{ … }` and parses that. It does
+ * NOT guess at malformed content: if the JSON itself is invalid (e.g.
+ * unescaped `"` inside `feedback`, which Sonnet has produced), it returns
+ * an error so the caller can retrigger the write rather than act on a
+ * mangled or hallucinated verdict.
+ */
+function parseVerdict(
+  raw: string,
+): { ok: true; verdict: ManagerVerdict } | { ok: false; error: string } {
+  let t = raw.replace(/^﻿/, "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(t);
+  } catch (e) {
+    return { ok: false, error: `invalid JSON: ${(e as Error).message}` };
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof (parsed as { accepted?: unknown }).accepted !== "boolean" ||
+    typeof (parsed as { feedback?: unknown }).feedback !== "string"
+  ) {
+    return {
+      ok: false,
+      error: 'missing required fields { accepted: bool, feedback: string }',
+    };
+  }
+  return { ok: true, verdict: parsed as ManagerVerdict };
+}
+
+/**
+ * Max times we re-ask the manager to (re)write review.json within a single
+ * review. A malformed or missing verdict retriggers the write with a
+ * corrective hint — it does NOT fail the slide on the first bad file. Only
+ * after this many genuinely unusable attempts do we surface an error to
+ * the per-slide loop.
+ */
+const MANAGER_REVIEW_ATTEMPTS = 3;
+
 async function runManager(opts: {
   slideDir: string;
   versionFilename: string; // v{N}.html
@@ -539,44 +624,70 @@ async function runManager(opts: {
   model: string;
 }): Promise<ManagerVerdict> {
   const reviewPath = join(opts.slideDir, "review.json");
-  await rm(reviewPath, { force: true });
+  let lastError = "";
 
-  const prompt = [
-    `Working directory: ${opts.slideDir}`,
-    `Review ${opts.versionFilename} (rendered to ${opts.screenshotFilename}).`,
-    `Write your verdict to review.json with shape { "accepted": bool, "feedback": string }.`,
-  ].join("\n\n");
+  for (let attempt = 1; attempt <= MANAGER_REVIEW_ATTEMPTS; attempt++) {
+    await rm(reviewPath, { force: true });
 
-  await driveAgent({
-    cwd: opts.slideDir,
-    systemPrompt: opts.systemPrompt,
-    prompt,
-    allowedTools: ["Read", "Write"],
-    label: "Manager agent",
-    model: opts.model,
-  });
+    const promptParts = [
+      `Working directory: ${opts.slideDir}`,
+      `Review ${opts.versionFilename} (rendered to ${opts.screenshotFilename}).`,
+      `Write your verdict to review.json with shape { "accepted": bool, "feedback": string }.`,
+    ];
+    if (attempt > 1) {
+      promptParts.push(
+        `RETRY (${attempt}/${MANAGER_REVIEW_ATTEMPTS}): your previous review.json was unusable — ${lastError}. ` +
+          `Write review.json again as a SINGLE valid JSON object and nothing else: ` +
+          `no markdown code fences, no prose before or after. Inside the "feedback" ` +
+          `string, every double-quote must be escaped as \\" and every newline as \\n ` +
+          `(do not paste raw quotes from the spec or the screenshot). Keep feedback concise.`,
+      );
+    }
 
-  if (!existsSync(reviewPath)) {
-    throw new Error("Manager agent did not write review.json");
-  }
-  const text = await readFile(reviewPath, "utf8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Manager agent wrote invalid JSON: ${(e as Error).message}`);
-  }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as { accepted?: unknown }).accepted !== "boolean" ||
-    typeof (parsed as { feedback?: unknown }).feedback !== "string"
-  ) {
-    throw new Error(
-      `Manager agent review.json missing required fields { accepted: bool, feedback: string }`,
+    try {
+      await driveAgent({
+        cwd: opts.slideDir,
+        systemPrompt: opts.systemPrompt,
+        prompt: promptParts.join("\n\n"),
+        allowedTools: ["Read", "Write"],
+        label: "Manager agent",
+        model: opts.model,
+      });
+    } catch (e) {
+      // The SDK stream stalled / was aborted by the idle watchdog, or some
+      // other transient agent failure. Per the watchdog's own contract
+      // ("the iter-retry loop can decide whether to retry or fail") this
+      // retriggers the whole review instead of failing the slide and
+      // moving on — same policy as a malformed verdict below.
+      lastError = `manager stream failed (${(e as Error).message})`;
+      process.stderr.write(
+        `  [manager] attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}: ${lastError} — retriggering\n`,
+      );
+      continue;
+    }
+
+    if (!existsSync(reviewPath)) {
+      lastError = "no review.json was written";
+    } else {
+      const result = parseVerdict(await readFile(reviewPath, "utf8"));
+      if (result.ok) {
+        if (attempt > 1) {
+          process.stderr.write(
+            `  [manager] valid review.json on attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}\n`,
+          );
+        }
+        return result.verdict;
+      }
+      lastError = result.error;
+    }
+    process.stderr.write(
+      `  [manager] attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}: ${lastError} — retriggering write\n`,
     );
   }
-  return parsed as ManagerVerdict;
+
+  throw new Error(
+    `Manager agent failed to produce valid review.json after ${MANAGER_REVIEW_ATTEMPTS} attempts: ${lastError}`,
+  );
 }
 
 // ─── Per-slide pipeline (Phase 3: impl + render, no manager) ───────────────

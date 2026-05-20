@@ -117,6 +117,15 @@ or, if rejecting:
 }
 ```
 
+`review.json` MUST be a single valid JSON object and nothing else — no
+markdown code fences, no prose before or after. The `feedback` value is one
+JSON string: escape every double-quote as `\"` and every newline as `\n`.
+When you quote a contract phrase, a token, or text from the screenshot, use
+escaped quotes (`\"like this\"`) or drop the quotes — raw `"` inside
+`feedback` is the most common way this file ends up invalid. The driver
+re-asks you up to 3 times if it can't parse the file; a clean first write
+avoids burning iterations.
+
 Accept ONLY if every hard-rule check passes AND there are no visible
 typographic accidents (auto-wrapped headlines, clashing colors, orphaned
 lines, missing rules, overflow off the canvas, broken kerning).
