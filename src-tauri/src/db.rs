@@ -683,7 +683,16 @@ fn map_slide_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Slide> {
     let carousel_id: String = row.get(1)?;
     let order_index: i64 = row.get(2)?;
     let content: String = row.get(3)?;
-    let title: Option<String> = row.get(4)?;
+    // The legacy slides schema declares `title TEXT NOT NULL DEFAULT ''`,
+    // so DBs migrated before that changed return `Some("")` for slides
+    // with no user-set title (every imported/CLI-created slide). Honour
+    // the documented contract (see `update_slide_title`): an empty or
+    // whitespace-only title means "auto-derive from content" — i.e. None.
+    // Normalising here fixes every read path (CLI status, Tauri, frontend)
+    // and both schema variants without a data migration.
+    let title: Option<String> = row
+        .get::<_, Option<String>>(4)?
+        .filter(|t| !t.trim().is_empty());
     let status: String = row.get(5)?;
     let last_error: Option<String> = row.get(6)?;
     let created_at: String = row.get(7)?;
@@ -1370,6 +1379,37 @@ mod tests {
         update_slide_title(&conn, &s.id, None).unwrap();
         let cleared_none = get_slide(&conn, &s.id).unwrap().unwrap();
         assert!(cleared_none.title.is_none());
+    }
+
+    #[test]
+    fn legacy_empty_string_title_maps_to_none() {
+        // Regression: production DBs migrated under the old
+        // `title TEXT NOT NULL DEFAULT ''` schema store '' (not NULL) for
+        // every imported/CLI-created slide. map_slide_row must treat that
+        // (and whitespace-only) as "no title", matching the documented
+        // update_slide_title contract — otherwise the slide list / CLI
+        // status render a blank label instead of auto-deriving from
+        // content. Simulate the legacy value with a raw write.
+        let conn = open_in_memory().unwrap();
+        let c = create_carousel(&conn, "legacy-title").unwrap();
+        let s = create_slide(&conn, &c.id).unwrap();
+        update_slide_content(&conn, &s.id, "# Slide 1 :: plate-chart\nbody").unwrap();
+
+        for raw in ["", "   ", "\t\n"] {
+            conn.execute(
+                "UPDATE slides SET title = ?2 WHERE id = ?1",
+                params![s.id, raw],
+            )
+            .unwrap();
+            let got = get_slide(&conn, &s.id).unwrap().unwrap();
+            assert!(
+                got.title.is_none(),
+                "raw title {raw:?} should map to None, got {:?}",
+                got.title
+            );
+            let listed = list_slides(&conn, &c.id).unwrap();
+            assert!(listed[0].title.is_none(), "list_slides path for {raw:?}");
+        }
     }
 
     #[test]
