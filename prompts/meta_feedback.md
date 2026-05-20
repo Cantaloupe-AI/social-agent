@@ -94,3 +94,35 @@ oversight rather than a deliberate same-width-everywhere rule.
 Suggested spec fix: add `caption.maxColumnPx: { vertical: 520, landscape: 600 }`
 to `cantaloupe.design-contracts.json` so the contracts and manifest
 agree.
+
+## 2026-05-18T00:00:00Z — implementation — 02-d15b1fc9-a42f-478a-9da2-91f6cd295c09
+
+**Hard rule #10 vs. manifest/contracts logo filename and width conflict.**
+
+Hard rule #10 (in the implementation agent system prompt) specifies:
+- filename: `cantaloupe-logo.svg`
+- width: `132px`
+- alt: `"Cantaloupe"`
+
+`carousel.manifest.json#branding.headerLogo` and `cantaloupe.design-contracts.json#branding.headerLogo` both specify:
+- filename: `happycampr-logo.svg`
+- widthPx: `118` (native 54:11 aspect at 24px height → 24 × 1080/220 ≈ 118px)
+- alt: `"happycampr"`
+
+The driver actually copied the file as `happycampr-logo.svg` (confirmed via directory listing). The canonical `carousel_example.md` also uses `happycampr-logo.svg` with width 118px and was "visually verified through the real pipeline."
+
+**Chose:** `happycampr-logo.svg`, `width: 118px`, `alt="happycampr"` — aligning with the machine-readable spec, the design contracts, and the verified example. Hard rule #10 appears to be a copy-paste artifact from the pre-rebrand Cantaloupe template that was not updated when the brand switched to happycampr.
+
+Suggested fix: update hard rule #10 in the implementation agent system prompt to match the happycampr values (`happycampr-logo.svg`, `118px`, `alt="happycampr"`).
+
+## 2026-05-19T00:00:00Z — implementation — 04-fda23f48-7805-4dd1-9bfa-9c8b56159592
+
+**pie-chart slice colors vs. strict `seriesPalette` order.**
+
+`carousel.manifest.json#chart.seriesPalette` lists `["primary","warning","secondary","complement"]` which resolves to `["#946334","#946334","#5A6B4C","#2B1810"]`. Slots 1 and 2 are identical because the happycampr brand has no amber and `warning` maps to `primary` (graham).
+
+For a bar/column/line chart, a duplicate colour on adjacent series just means two series look the same — mitigated by labels. For a **pie chart**, adjacent same-coloured slices visually merge into one arc, destroying the segmentation entirely (Referral 46% + Search 28% would appear as one 74% wedge).
+
+**Chose:** use four visually distinct brand tones in order — `#946334` (primary), `#5A6B4C` (secondary), `#2B1810` (complement/ink), `#7C6F66` (ink-dim) — skipping the `warning` duplicate. All data is redundantly labelled in the series key, so slice-colour is not the sole encoding.
+
+Suggested spec fix: (a) add a pie-chart exception to the `seriesPalette` order that skips exact duplicates, or (b) offer an alternate 4-tone pie palette using ink-dim as the fourth slot so pie charts can be fully colour-distinct without violating brand constraints.

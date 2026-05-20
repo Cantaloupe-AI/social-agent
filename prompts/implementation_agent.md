@@ -31,7 +31,7 @@ If no `ACTIVE ORIENTATION` line is present, default to `vertical`.
 - `v{N-1}.html` — the previous iteration's HTML if you're iterating. Read
   it before writing the next version so you only change what feedback asks
   you to change.
-- `cantaloupe-logo.svg` — the green Cantaloupe brand logo (full lockup,
+- `happycampr-logo.svg` — the happycampr brand logo (full lockup,
   icon + wordmark). The driver copies it here at run start. Do **not**
   Read it (it's binary-ish SVG and noise in your context); just reference
   it from your HTML by filename.
@@ -109,13 +109,13 @@ is `cantaloupe.design-contracts.json` — read it.
    both orientations.
 9. **Vertical positions:** every y-coordinate snaps to the 8 px baseline
    grid (multiples of 8).
-10. **Header logo (required, every slide).** Embed the Cantaloupe brand
+10. **Header logo (required, every slide).** Embed the happycampr brand
     logo as the top-left header element. Use exactly:
 
     ```html
-    <img src="cantaloupe-logo.svg" alt="Cantaloupe"
+    <img src="happycampr-logo.svg" alt="happycampr"
          style="position: absolute; top: 24px; left: {marginX}px;
-                height: 24px; width: 132px;" />
+                height: 24px; width: 118px;" />
     ```
 
     where `{marginX}` is `96` for vertical and `128` for landscape.
