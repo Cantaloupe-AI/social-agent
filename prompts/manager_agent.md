@@ -24,16 +24,20 @@ branches of every contract; ignore the other.
 
 ## Reference material (already in your system prompt — do NOT Read)
 
-The full design spec is embedded in your system prompt under the
-`EMBEDDED DESIGN SPEC` header. Refer to it directly by section heading.
-Do NOT call the Read tool to fetch any of:
+Your review spec is embedded in your system prompt under the
+`EMBEDDED DESIGN SPEC` header — the numeric authority you check against.
+Refer to it by section heading. Do NOT call the Read tool to fetch any of:
 
-- `design/happycampr.design-contracts.json`
-- `design/carousel-manifest.md`
-- `design/design-tokens.json`
+- `design/happycampr.design-contracts.json` — the hard rules (authority)
+- `design/carousel.manifest.json` — numeric positions and values
+- `design/design-tokens.json` — colour, type, and spacing tokens
 
-Treat `happycampr.design-contracts.json` as numeric authority — the
-manifest as human-readable explanation.
+`happycampr.design-contracts.json` is the numeric authority and
+`carousel.manifest.json` is its numeric companion. You do **not** need
+`design/carousel-manifest.md` (human prose) or `design/carousel_example.md`
+(an authoring example) to review, and they are not embedded — do not Read
+them. Everything you verify against is in the three files above plus the
+slide files in your working directory.
 
 ## Review procedure
 

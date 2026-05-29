@@ -71,16 +71,29 @@ const HEADER_LOGOS = [
 ];
 
 /**
- * Design files inlined into every agent's system prompt at run start.
- * Order matters only for human-readability of the resulting block; the
- * SDK doesn't care.
+ * Design files inlined into an agent's system prompt at run start. The
+ * spec is re-billed (cache_read, or full input on a >5min cache-TTL bust)
+ * on EVERY turn, so it's the dominant token cost under rate limiting —
+ * keep each agent's set to only what that role needs.
+ *
+ * The implementation agent AUTHORS, so it gets the full spec including the
+ * worked example. The manager only REVIEWS against the rules, so it gets
+ * the numeric authority (contracts + numeric manifest + tokens) and skips
+ * the 27K-char human manifest prose and the 9K authoring example — ~40%
+ * less system prompt on the agent that does the most turns. Keep the
+ * manager_agent.md "Reference material" list in sync with MANAGER set.
  */
-const DESIGN_SPEC_FILES = [
+const IMPL_SPEC_FILES = [
   "design/design-tokens.json",
   "design/carousel-manifest.md",
   "design/carousel.manifest.json",
   "design/happycampr.design-contracts.json",
   "design/carousel_example.md",
+];
+const MANAGER_SPEC_FILES = [
+  "design/design-tokens.json",
+  "design/carousel.manifest.json",
+  "design/happycampr.design-contracts.json",
 ];
 
 /**
@@ -347,9 +360,9 @@ function insertSlideFeedback(
  * on the first agent call per run; every subsequent call reads it from
  * cache at ~10% the price.
  */
-async function loadDesignSpec(): Promise<string> {
+async function loadDesignSpec(files: string[]): Promise<string> {
   const sections = await Promise.all(
-    DESIGN_SPEC_FILES.map(async (rel) => {
+    files.map(async (rel) => {
       const text = await readFile(join(REPO_ROOT, rel), "utf8");
       return `## ${rel}\n\n${text}`;
     }),
@@ -380,6 +393,13 @@ async function driveAgent(opts: {
   label: string;
   /** Model id passed through to the SDK. Caller resolves NULL → DEFAULT_MODEL. */
   model: string;
+  /**
+   * Hard cap on agent turns. A safety rail against runaway sessions: every
+   * extra turn re-bills the embedded design spec, so an agent that spirals
+   * (re-reading files, looping) burns tokens-per-minute fast. Set generously
+   * so normal work is never truncated; it only catches pathological runs.
+   */
+  maxTurns: number;
 }): Promise<void> {
   const abortController = new AbortController();
   const q = query({
@@ -390,6 +410,7 @@ async function driveAgent(opts: {
       systemPrompt: opts.systemPrompt,
       permissionMode: "auto",
       allowedTools: opts.allowedTools,
+      maxTurns: opts.maxTurns,
       abortController,
     },
   });
@@ -576,6 +597,9 @@ async function runImplementer(opts: {
     allowedTools: ["Read", "Write", "Edit"],
     label: "Implementation agent",
     model: opts.model,
+    // Authoring: read inputs, write/iterate HTML. Normal runs are well
+    // under this; the cap only stops a spiral.
+    maxTurns: 28,
   });
 }
 
@@ -668,6 +692,9 @@ async function runManager(opts: {
         allowedTools: ["Read", "Write"],
         label: "Manager agent",
         model: opts.model,
+        // Review: read source/html/png, write review.json. A normal review
+        // is a handful of turns; this only stops a spiral.
+        maxTurns: 18,
       });
     } catch (e) {
       // The SDK stream stalled / was aborted by the idle watchdog, or some
@@ -922,8 +949,18 @@ async function main() {
   // The ACTIVE ORIENTATION header sits *above* the design spec so the
   // agent reads it first and knows which `orientations.X` and
   // `canvas.X` branches to follow.
-  const designSpec = await loadDesignSpec();
-  log(`Embedded design spec: ${designSpec.length.toLocaleString()} chars`);
+  // Per-role specs: the implementer gets the full authoring spec; the
+  // manager gets the leaner review spec (numeric authority only). Smaller
+  // manager prompt = fewer tokens re-billed on every one of its turns,
+  // which is the dominant cost under rate limiting.
+  const [implSpec, managerSpec] = await Promise.all([
+    loadDesignSpec(IMPL_SPEC_FILES),
+    loadDesignSpec(MANAGER_SPEC_FILES),
+  ]);
+  log(
+    `Embedded design spec: impl ${implSpec.length.toLocaleString()} chars, ` +
+      `manager ${managerSpec.length.toLocaleString()} chars`,
+  );
   const orientationHeader = [
     "==========================================================",
     `ACTIVE ORIENTATION: ${orientation} (${dims.widthPx} × ${dims.heightPx})`,
@@ -938,8 +975,8 @@ async function main() {
   ].join("\n");
   const implRolePrompt = await Bun.file(IMPL_PROMPT_PATH).text();
   const managerRolePrompt = await Bun.file(MGR_PROMPT_PATH).text();
-  const implPrompt = `${implRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
-  const managerPrompt = `${managerRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
+  const implPrompt = `${implRolePrompt}\n\n${orientationHeader}\n${implSpec}`;
+  const managerPrompt = `${managerRolePrompt}\n\n${orientationHeader}\n${managerSpec}`;
 
   let allOk = true;
   for (let i = 0; i < slides.length; i++) {
