@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cantalog-cli — change review</title>
+<title>happycampr-carousels-cli — change review</title>
 <style>
   :root{
     --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --ink:#e6edf3;
@@ -54,14 +54,14 @@
 <body>
 <div class="wrap">
 
-  <h1>cantalog-cli — change review</h1>
+  <h1>happycampr-carousels-cli — change review</h1>
   <p class="sub">Scriptable CLI over the carousel generation pipeline · uncommitted on <code>main</code> · reviewed by 3 red-team agents · generated end-to-end live</p>
 
   <div class="card tldr">
     <h2>Read this first — the 4 things that matter</h2>
     <ol style="margin:6px 0 0;padding-left:20px">
       <li><b>It works end-to-end.</b> The CLI generated a real carousel through the live agent loop (OAuth) → <code>cli-e2e-verify-v1.pdf</code>, accepted on iteration 1. Opened in Preview.</li>
-      <li><b>A regression was caught &amp; fixed.</b> Adding a 2nd binary broke <code>tauri build</code> ("failed to find main binary"). Fixed with <code>default-run="cantalog"</code>; verified by a full <code>tauri build --debug</code> that bundled the .app + dmg. <code>cargo&nbsp;test</code> alone did <i>not</i> surface it.</li>
+      <li><b>A regression was caught &amp; fixed.</b> Adding a 2nd binary broke <code>tauri build</code> ("failed to find main binary"). Fixed with <code>default-run="happycampr_carousels"</code>; verified by a full <code>tauri build --debug</code> that bundled the .app + dmg. <code>cargo&nbsp;test</code> alone did <i>not</i> surface it.</li>
       <li><b>Red team found 2 HIGH + several MED/LOW. All actioned.</b> Code-fixed the real ones (unclosed-fence data loss, finalize invariant, <code>--detach</code> safety). The rest are documented-with-rationale, not silently ignored.</li>
       <li><b>Commit hygiene — your call.</b> The working tree mixes <i>pre-existing</i> uncommitted orientation work with this CLI work. Recommend <b>two commits</b> (see §Commit hygiene).</li>
     </ol>
@@ -75,13 +75,13 @@
       <p>The Tauri-free core of <code>generate_carousel_pdf</code> was extracted from <code>commands.rs</code> into a new <code>generation.rs</code> (<code>prepare_run</code> / <code>spawn_driver</code> / <code>finalize</code> + run-dir naming + log tee). The Tauri command keeps only the in-memory process map + watcher (the UI-cancel concern) and calls the shared core. <b>Run-dir naming and the crash-finalize safety net now live in exactly one place</b> — required by the repo's error conventions. <code>commands.rs</code>: −294 / +64 lines.</p>
     </div>
     <div class="card">
-      <h3>2 · New <code>cantalog-cli</code> binary <span class="tag">create · import · generate · status · open</span></h3>
+      <h3>2 · New <code>happycampr-carousels-cli</code> binary <span class="tag">create · import · generate · status · open</span></h3>
       <p>A second <code>[[bin]]</code> in the same crate. Thin <code>clap</code> parser → pure, unit-tested handlers in <code>cli.rs</code> (incl. a deck-markdown parser that splits on <code># Slide …</code> blocks). Headless: it supervises the bun driver, streams logs, opens the PDF. Reads/writes the same <code>db.sqlite</code> as the app (a CLI carousel shows up in the UI and vice-versa).</p>
     </div>
     <div class="card">
       <h3>3 · The <code>tauri build</code> regression — caught &amp; fixed</h3>
       <div class="flag" style="margin:8px 0 0">
-        <b>Why it mattered:</b> a 2nd <code>[[bin]]</code> with no <code>package.default-run</code> makes <code>tauri build</code> fail with <span class="mono">failed to find main binary</span>. <code>cargo test</code>/<code>check</code>/<code>build</code> all stayed green (they build every bin), so a partial verification missed it. Fixed with <code>default-run = "cantalog"</code>, then verified by a complete <code>tauri build --debug</code> that produced <code>Cantalog.app</code> + the dmg. Lesson recorded in STATUS.md.
+        <b>Why it mattered:</b> a 2nd <code>[[bin]]</code> with no <code>package.default-run</code> makes <code>tauri build</code> fail with <span class="mono">failed to find main binary</span>. <code>cargo test</code>/<code>check</code>/<code>build</code> all stayed green (they build every bin), so a partial verification missed it. Fixed with <code>default-run = "happycampr_carousels"</code>, then verified by a complete <code>tauri build --debug</code> that produced <code>Happycampr Carousels.app</code> + the dmg. Lesson recorded in STATUS.md.
       </div>
     </div>
   </div>
@@ -91,7 +91,7 @@
     <tr><th>File</th><th>Δ</th><th>What</th></tr>
     <tr><td class="mono">src-tauri/src/generation.rs</td><td>new · 571 L</td><td>Shared Tauri-free generation core + 9 tests</td></tr>
     <tr><td class="mono">src-tauri/src/cli.rs</td><td>new · 801 L</td><td>CLI handlers + deck parser + 19 tests</td></tr>
-    <tr><td class="mono">src-tauri/src/bin/cantalog-cli.rs</td><td>new · 324 L</td><td>clap wrapper (formatting + exit codes only)</td></tr>
+    <tr><td class="mono">src-tauri/src/bin/happycampr-carousels-cli.rs</td><td>new · 324 L</td><td>clap wrapper (formatting + exit codes only)</td></tr>
     <tr><td class="mono">src-tauri/src/commands.rs</td><td>−294 / +64</td><td>Delegates to <code>generation::*</code>; commands unchanged</td></tr>
     <tr><td class="mono">src-tauri/src/lib.rs</td><td>+2</td><td><code>pub mod generation; pub mod cli;</code></td></tr>
     <tr><td class="mono">src-tauri/Cargo.toml</td><td>+~16</td><td><code>[[bin]]</code>, <code>default-run</code>, <code>clap</code> (+ rationale)</td></tr>
@@ -137,7 +137,7 @@
   <div class="flag">
     <b>⚑ Action for you — Commit hygiene (red team, Medium)</b><br>
     The working tree bundles two independent workstreams: the <b>pre-existing per-carousel orientation/model feature</b> (<code>db.rs</code>, <code>types.rs</code>, <code>src/components/*</code>, <code>scripts/*</code>, <code>prompts/*</code>) and <b>this CLI work</b> (<code>generation.rs</code>, <code>cli.rs</code>, <code>bin/</code>, <code>Cargo.*</code>). They're functionally separable. Recommended: commit them as <b>two conventional commits</b> for clean <code>git bisect</code>/rollback —
-    e.g. <code>feat(carousels): per-carousel orientation</code> then <code>feat(cli): cantalog-cli + generation core extraction</code>. Nothing is committed yet; this is your decision.
+    e.g. <code>feat(carousels): per-carousel orientation</code> then <code>feat(cli): happycampr-carousels-cli + generation core extraction</code>. Nothing is committed yet; this is your decision.
   </div>
 
   <h2>Verification — full matrix green</h2>
@@ -148,33 +148,33 @@
     <tr><td><code>bun run tsc --noEmit</code></td><td><span class="pill ok">clean</span></td></tr>
     <tr><td><code>bun run vitest run</code></td><td><span class="pill ok">25 passed</span></td></tr>
     <tr><td><code>bun run vite build</code></td><td><span class="pill ok">built</span> (pre-existing chunk-size advisory only)</td></tr>
-    <tr><td><code>bun run tauri build --debug</code></td><td><span class="pill ok">Cantalog.app + dmg bundled</span> ← the check that caught the regression</td></tr>
+    <tr><td><code>bun run tauri build --debug</code></td><td><span class="pill ok">Happycampr Carousels.app + dmg bundled</span> ← the check that caught the regression</td></tr>
     <tr><td>CLI smoke (temp HOME)</td><td><span class="pill ok">pass</span> create/import/slide/list/status/open; unclosed-fence rejected (exit 1)</td></tr>
   </table>
 
   <div class="card win">
     <h3 style="margin-top:0">✅ Live end-to-end proof</h3>
     <div class="kv">
-      <div>Command</div><div class="mono">cantalog-cli import --new --file … &amp;&amp; cantalog-cli generate &lt;id&gt;</div>
+      <div>Command</div><div class="mono">happycampr-carousels-cli import --new --file … &amp;&amp; happycampr-carousels-cli generate &lt;id&gt;</div>
       <div>Auth</div><div>Claude Code OAuth (no API key in env — picked up automatically)</div>
       <div>Pipeline</div><div>Implementation agent → puppeteer render → Manager agent → <b>accepted iter 1</b></div>
       <div>Result</div><div><span class="pill ok">status: done</span> · slide accepted · <code>cli-e2e-verify-v1.pdf</code> (29&nbsp;KB)</div>
-      <div>Path</div><div class="mono">…/cantalog/carousels/cli-e2e-verify/run-1/cli-e2e-verify-v1.pdf</div>
+      <div>Path</div><div class="mono">…/happycampr_carousels/carousels/cli-e2e-verify/run-1/cli-e2e-verify-v1.pdf</div>
     </div>
   </div>
 
   <h2>Using the CLI</h2>
 <pre>cd src-tauri
-cargo run -q --bin cantalog-cli -- &lt;cmd&gt;        # or: cargo build --release --bin cantalog-cli
+cargo run -q --bin happycampr-carousels-cli -- &lt;cmd&gt;        # or: cargo build --release --bin happycampr-carousels-cli
 
-cantalog-cli carousel create --label "Launch" [--orientation vertical|landscape]
-cantalog-cli carousel list
-cantalog-cli slide add &lt;id&gt; --file s.md            # or --stdin / --content "…"  [--title T]
-cantalog-cli import --new --file deck.md           # splits on `# Slide …` blocks
-cantalog-cli import --carousel &lt;id&gt; --file deck.md # append to an existing carousel
-cantalog-cli generate &lt;id&gt;                         # blocks, streams logs, opens the PDF
-cantalog-cli status &lt;id&gt; [--log 40] [--watch]
-cantalog-cli open &lt;id&gt;</pre>
+happycampr-carousels-cli carousel create --label "Launch" [--orientation vertical|landscape]
+happycampr-carousels-cli carousel list
+happycampr-carousels-cli slide add &lt;id&gt; --file s.md            # or --stdin / --content "…"  [--title T]
+happycampr-carousels-cli import --new --file deck.md           # splits on `# Slide …` blocks
+happycampr-carousels-cli import --carousel &lt;id&gt; --file deck.md # append to an existing carousel
+happycampr-carousels-cli generate &lt;id&gt;                         # blocks, streams logs, opens the PDF
+happycampr-carousels-cli status &lt;id&gt; [--log 40] [--watch]
+happycampr-carousels-cli open &lt;id&gt;</pre>
 
   <h2>Caveats to know (documented in STATUS.md)</h2>
   <ul>
@@ -184,7 +184,7 @@ cantalog-cli open &lt;id&gt;</pre>
     <li>The real agent loop is intentionally not unit-tested (network/cost/minutes); its pieces are. Covered by the live E2E above.</li>
   </ul>
 
-  <p class="foot">Generated for pre-commit review · Cantalog · nothing committed — working tree only.
+  <p class="foot">Generated for pre-commit review · Happycampr Carousels · nothing committed — working tree only.
   Red team: 3 parallel adversarial agents (Sonnet). This file is at the repo root and is itself uncommitted; delete it or keep it out of the commit.</p>
 
 </div>

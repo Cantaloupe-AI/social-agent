@@ -1,5 +1,5 @@
 {
-  "$description": "Machine-readable mirror of carousel-manifest.md. Numeric values for renderers. Companion: cantaloupe.design-contracts.json (validation), design-tokens.json (DTCG source). Orientation-coupled blocks (canvas, grid.page, grid.contentArea, header positions, footer positions, columns) live under orientations.{vertical|landscape}. The driver injects an `ACTIVE ORIENTATION` header into each agent's prompt; the agent picks the matching block and ignores the other.",
+  "$description": "Machine-readable mirror of carousel-manifest.md. Numeric values for renderers. Companion: happycampr.design-contracts.json (validation), design-tokens.json (DTCG source). Orientation-coupled blocks (canvas, grid.page, grid.contentArea, header positions, footer positions, columns) live under orientations.{vertical|landscape}. The driver injects an `ACTIVE ORIENTATION` header into each agent's prompt; the agent picks the matching block and ignores the other.",
   "orientations": {
     "vertical": {
       "canvas": {
@@ -160,11 +160,16 @@
     "$description": "Until theming lands (see `themingFutureWork`), every carousel uses happycampr brand identity. The implementation agent must include the header logo on every slide.",
     "themingFutureWork": "Carousels will eventually support themes — selectable brand identities (e.g. agency clients, alternate happycampr themes, neutral/blank). Theming is OUT OF SCOPE for v0.x. The current assumption is hardcoded: every slide uses the happycampr full lockup. When theming lands, this `branding` block becomes per-theme, with the carousel row gaining a `theme` column the renderer/agents read.",
     "headerLogo": {
-      "$description": "happycampr full lockup (marshmallow mark + 'happycampr' wordmark) in brand colours #F5F1E8 fill / #2B1810 stroke. Drives the header's top-left slot on every non-cover slide; on cover slides it sits at the same anchor and the cover's display title still owns the bottom of the canvas. See design/ambiguous.md §13.5.",
+      "$description": "happycampr full lockup (mark + 'happycampr' wordmark). Ships in two colourways so the wordmark is always legible on the header surface: a burnt lockup for light/marshmallow slides and a marshmallow lockup for dark/burnt surface-inverse slides (e.g. takeaway). Pick the variant that contrasts with the slide background. Drives the header's top-left slot on every slide. See design/ambiguous.md §13.5 and design-tokens.json#branding.",
       "assetRelPath": "design/assets/happycampr-logo-full.svg",
       "perSlideFilename": "happycampr-logo.svg",
-      "embedAs": "<img src=\"happycampr-logo.svg\" alt=\"happycampr\" style=\"position: absolute; top: {top}px; left: {left}px; height: {heightPx}px; width: {widthPx}px;\" />",
-      "perSlideCopyStrategy": "The driver copies the asset into each slide's working directory at run start under the `perSlideFilename` name; the agent references it by filename only. This keeps the HTML portable: the slide folder is fully self-contained and the renderer's `file://` resolution does the rest.",
+      "variantBySurface": {
+        "$description": "Both variants are copied into every slide dir; reference the one matching this slide's background. A logo that blends into its surface is a hard fail (see happycampr.design-contracts.json#branding.headerLogo.rejectIf).",
+        "marshmallow": { "assetRelPath": "design/assets/happycampr-logo-full.svg", "perSlideFilename": "happycampr-logo.svg", "note": "Burnt lockup — light/marshmallow surfaces (default slides)." },
+        "burnt": { "assetRelPath": "design/assets/happycampr-logo-full-marshmallow.svg", "perSlideFilename": "happycampr-logo-inverse.svg", "note": "Marshmallow lockup — dark/burnt surface-inverse slides (takeaway)." }
+      },
+      "embedAs": "<img src=\"happycampr-logo.svg\" alt=\"happycampr\" style=\"position: absolute; top: {top}px; left: {left}px; height: {heightPx}px; width: {widthPx}px;\" />  (use src=\"happycampr-logo-inverse.svg\" on burnt/surface-inverse slides)",
+      "perSlideCopyStrategy": "The driver copies BOTH variants into each slide's working directory at run start under their `perSlideFilename` names; the agent references the matching one by filename only. This keeps the HTML portable: the slide folder is fully self-contained and the renderer's `file://` resolution does the rest.",
       "nativeAspect": "54:11",
       "renderHeightPx": 24,
       "renderWidthPx": 118,
@@ -372,7 +377,7 @@
     "itemRuleColor": "ink"
   },
   "chart": {
-    "$description": "plate-chart engine config. Charts.css (pure CSS) styles a semantic <table> as a chart — no JS, no canvas, no inline-SVG charts. Machine mirror of carousel-manifest.md §12a; hard rules live in cantaloupe.design-contracts.json#chart.",
+    "$description": "plate-chart engine config. Charts.css (pure CSS) styles a semantic <table> as a chart — no JS, no canvas, no inline-SVG charts. Machine mirror of carousel-manifest.md §12a; hard rules live in happycampr.design-contracts.json#chart.",
     "engine": "charts.css",
     "stylesheetCdn": "https://cdn.jsdelivr.net/npm/charts.css@1.2.0/dist/charts.min.css",
     "stylesheetVersion": "1.2.0",

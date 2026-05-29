@@ -109,7 +109,7 @@ export function LogView({ configOpen, onOpenConfig }: LogViewProps) {
         setSaveState((s) => (s === "saved" ? "idle" : s));
       }, 1200);
     } catch (e: unknown) {
-      console.error("cantalog: saveEntry failed", e);
+      console.error("happycampr: saveEntry failed", e);
       setSaveState("idle");
     }
   }, [activities, thoughts, saveState, configOpen, setActivities]);

@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "cantalog/decisions/decisions.schema.json",
+  "$id": "happycampr_carousels/decisions/decisions.schema.json",
   "title": "Decision review export",
   "description": "Shape of the file exported by decisions/index.html. One file per review topic; re-importable to continue a review.",
   "type": "object",
   "required": ["project", "topic", "decisions"],
   "additionalProperties": true,
   "properties": {
-    "project": { "type": "string", "const": "cantalog" },
+    "project": { "type": "string", "const": "happycampr_carousels" },
     "topic": { "type": "string", "description": "What was reviewed, e.g. 'plate-chart (Charts.css) slide type'." },
     "generatedAt": { "type": "string", "description": "Date the reviewed work was produced (YYYY-MM-DD)." },
     "exportedAt": { "type": "string", "format": "date-time", "description": "ISO timestamp of this export." },

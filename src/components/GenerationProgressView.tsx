@@ -67,7 +67,7 @@ export function GenerationProgressView({
         setPollError(null);
       } catch (e: unknown) {
         if (cancelled) return;
-        console.warn("cantalog: progress poll failed", e);
+        console.warn("happycampr: progress poll failed", e);
         setPollError(String(e));
       }
     };
@@ -107,7 +107,7 @@ export function GenerationProgressView({
     try {
       await cancelGeneration(carousel.id);
     } catch (e: unknown) {
-      console.error("cantalog: cancelGeneration failed", e);
+      console.error("happycampr: cancelGeneration failed", e);
       setPollError(`Cancel failed: ${String(e)}`);
     }
   }
@@ -268,7 +268,7 @@ function SlideDetailPanel({ slide }: { slide: Slide | null }) {
               return [v.id, fb] as const;
             } catch (e) {
               console.warn(
-                "cantalog: listSlideFeedback failed for",
+                "happycampr: listSlideFeedback failed for",
                 v.id,
                 e,
               );
@@ -281,7 +281,7 @@ function SlideDetailPanel({ slide }: { slide: Slide | null }) {
         setLoadError(null);
       } catch (e: unknown) {
         if (cancelled) return;
-        console.warn("cantalog: slide detail load failed", e);
+        console.warn("happycampr: slide detail load failed", e);
         setLoadError(String(e));
       }
     };
@@ -465,7 +465,7 @@ function RunLogPanel({
         setLogError(null);
       } catch (e: unknown) {
         if (cancelled) return;
-        console.warn("cantalog: readRunLogTail failed", e);
+        console.warn("happycampr: readRunLogTail failed", e);
         setLogError(String(e));
       }
     };

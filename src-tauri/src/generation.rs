@@ -2,7 +2,7 @@
 //!
 //! Everything `commands::generate_carousel_pdf` does *except* parking the
 //! child in the in-memory `GenerationProcesses` map (a UI-cancel concern)
-//! lives here, so the Tauri command and the `cantalog-cli` binary drive a
+//! lives here, so the Tauri command and the `happycampr-carousels-cli` binary drive a
 //! generation through one code path. Per CLAUDE.md §conventions/errors:
 //! run-dir naming and the crash-finalize safety net exist in exactly one
 //! place — `next_run_dir` and `finalize` below.
@@ -25,7 +25,7 @@ fn open_db(base_dir: &Path) -> Result<rusqlite::Connection, String> {
 /// Resolve the repo root (parent of the `src-tauri` Cargo manifest dir).
 ///
 /// `CARGO_MANIFEST_DIR` is `/…/social-agent/src-tauri` at build time for
-/// every binary in this crate (the Tauri app and `cantalog-cli` alike).
+/// every binary in this crate (the Tauri app and `happycampr-carousels-cli` alike).
 pub fn repo_root() -> Result<PathBuf, String> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -46,15 +46,15 @@ pub fn driver_script(root: &Path) -> PathBuf {
 /// `Command::new("bun")` fails at spawn with ENOENT. Observed: carousel
 /// runs 1–4 died ~3 ms in with `spawn failed: No such file or directory
 /// (os error 2)`, while the same carousel succeeded to spawn from
-/// `cantalog-cli` (a shell child that *does* inherit `~/.bun/bin`).
+/// `happycampr-carousels-cli` (a shell child that *does* inherit `~/.bun/bin`).
 ///
-/// Strategy, in order: an explicit `CANTALOG_BUN` override, the known
+/// Strategy, in order: an explicit `HAPPYCAMPR_BUN` override, the known
 /// install locations, then a bare `"bun"` fallback so terminal/CLI
 /// launches keep working via the inherited PATH. `spawn_driver` also
 /// prepends the resolved dir to the child's PATH so `bun` finds anything
 /// it shells out to even under the stripped GUI environment.
 fn resolve_bun() -> PathBuf {
-    if let Some(p) = std::env::var_os("CANTALOG_BUN") {
+    if let Some(p) = std::env::var_os("HAPPYCAMPR_BUN") {
         let p = PathBuf::from(p);
         if p.is_file() {
             return p;
@@ -70,7 +70,7 @@ fn resolve_bun() -> PathBuf {
         .into_iter()
         .find(|c| c.is_file())
         // Last resort: bare name. Resolves via the inherited PATH, which
-        // works for the `cantalog-cli` (shell child) launch path.
+        // works for the `happycampr-carousels-cli` (shell child) launch path.
         .unwrap_or_else(|| PathBuf::from("bun"))
 }
 
@@ -127,7 +127,7 @@ pub fn spawn_pipe_tee(
             let line = match line_res {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("cantalog: pipe-tee[{label}] read error: {e}");
+                    eprintln!("happycampr: pipe-tee[{label}] read error: {e}");
                     return;
                 }
             };
@@ -144,14 +144,14 @@ pub fn spawn_pipe_tee(
                 Ok(mut f) => {
                     if let Err(e) = f.write_all(stamped.as_bytes()) {
                         eprintln!(
-                            "cantalog: pipe-tee[{label}] log write failed ({}): {e}",
+                            "happycampr: pipe-tee[{label}] log write failed ({}): {e}",
                             log_path.display()
                         );
                     }
                 }
                 Err(e) => {
                     eprintln!(
-                        "cantalog: pipe-tee[{label}] log open failed ({}): {e}",
+                        "happycampr: pipe-tee[{label}] log open failed ({}): {e}",
                         log_path.display()
                     );
                 }
@@ -169,14 +169,14 @@ pub fn append_log_line(log_path: &Path, line: &str) {
         Ok(mut f) => {
             if let Err(e) = f.write_all(stamped.as_bytes()) {
                 eprintln!(
-                    "cantalog: append_log_line failed ({}): {e}",
+                    "happycampr: append_log_line failed ({}): {e}",
                     log_path.display()
                 );
             }
         }
         Err(e) => {
             eprintln!(
-                "cantalog: append_log_line open failed ({}): {e}",
+                "happycampr: append_log_line open failed ({}): {e}",
                 log_path.display()
             );
         }
@@ -453,7 +453,7 @@ mod tests {
     fn fresh_base_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
-            "cantalog-test-gen-{}-{}-{}",
+            "happycampr-carousels-test-gen-{}-{}-{}",
             tag,
             std::process::id(),
             n

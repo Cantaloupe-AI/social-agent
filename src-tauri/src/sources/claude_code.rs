@@ -123,7 +123,7 @@ pub fn scan_projects(
 ) -> Result<Vec<Activity>> {
     let Ok(entries) = std::fs::read_dir(projects_dir) else {
         eprintln!(
-            "cantalog: claude projects dir not readable: {}",
+            "happycampr: claude projects dir not readable: {}",
             projects_dir.display()
         );
         return Ok(Vec::new());
@@ -203,7 +203,7 @@ mod tests {
     fn fresh_temp(tag: &str) -> std::path::PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let p = std::env::temp_dir().join(format!(
-            "cantalog-test-claude-{}-{}-{}",
+            "happycampr-carousels-test-claude-{}-{}-{}",
             tag,
             std::process::id(),
             n
@@ -239,7 +239,7 @@ mod tests {
     fn claude_code_system_wrappers_are_skipped_to_reach_real_prompt() {
         let summary = first_user_message(SYSTEM_WRAPPERS_THEN_REAL).expect("summary");
         assert!(
-            summary.starts_with("# Build: Cantalog"),
+            summary.starts_with("# Build: Happycampr Carousels"),
             "expected real prompt, got {summary:?}"
         );
         // Make sure neither wrapper leaked through.
@@ -289,8 +289,8 @@ mod tests {
     #[test]
     fn unescape_project_name_follows_spec_literally() {
         assert_eq!(
-            unescape_project_name("-Users-josh-code-cantalog"),
-            "Users/josh/code/cantalog"
+            unescape_project_name("-Users-josh-code-happycampr_carousels"),
+            "Users/josh/code/happycampr_carousels"
         );
         // Hidden-dir double-dash encoding — spec-literal behavior produces a double slash,
         // which is documented as lossy in a TODO(spec) comment.
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn scan_projects_missing_dir_returns_empty() {
-        let dir = std::env::temp_dir().join("cantalog-test-claude-missing");
+        let dir = std::env::temp_dir().join("happycampr-carousels-test-claude-missing");
         let _ = std::fs::remove_dir_all(&dir);
         let reference = Local::now();
         let activities = scan_projects(&dir, reference).unwrap();
@@ -334,7 +334,7 @@ mod tests {
     #[test]
     fn scan_projects_picks_up_today_session_only() {
         let base = fresh_temp("today");
-        let project = base.join("-Users-josh-code-cantalog");
+        let project = base.join("-Users-josh-code-happycampr_carousels");
         std::fs::create_dir_all(&project).unwrap();
 
         let reference = Local.with_ymd_and_hms(2026, 4, 19, 13, 0, 0).unwrap();
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(activities.len(), 1, "got {activities:?}");
         let a = &activities[0];
         assert_eq!(a.source, ActivitySource::ClaudeCodeSession);
-        assert_eq!(a.chip, "Users/josh/code/cantalog");
+        assert_eq!(a.chip, "Users/josh/code/happycampr_carousels");
         assert_eq!(a.summary, "How do I set up Tauri v2 with SQLite?");
         assert_eq!(a.id, "claude:today");
         assert!(a.included);

@@ -1091,7 +1091,7 @@ mod tests {
                 source: ActivitySource::GitCommit,
                 timestamp: Utc.with_ymd_and_hms(2026, 4, 19, 14, 32, 0).unwrap(),
                 summary: "Fix date rollover bug".into(),
-                chip: "cantalog".into(),
+                chip: "happycampr_carousels".into(),
                 included: true,
             },
             Activity {
@@ -1099,7 +1099,7 @@ mod tests {
                 source: ActivitySource::ClaudeCodeSession,
                 timestamp: Utc.with_ymd_and_hms(2026, 4, 19, 10, 12, 0).unwrap(),
                 summary: "How do I set up Tauri v2?".into(),
-                chip: "cantalog".into(),
+                chip: "happycampr_carousels".into(),
                 included: false,
             },
         ]

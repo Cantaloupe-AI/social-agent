@@ -64,7 +64,7 @@ pub fn fetch_today(repo_path: &Path) -> Result<Vec<Activity>> {
         Ok(o) => o,
         Err(e) => {
             eprintln!(
-                "cantalog: git log failed for {}: {}",
+                "happycampr: git log failed for {}: {}",
                 repo_path.display(),
                 e
             );
@@ -75,7 +75,7 @@ pub fn fetch_today(repo_path: &Path) -> Result<Vec<Activity>> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         eprintln!(
-            "cantalog: git log non-zero exit for {}: {}",
+            "happycampr: git log non-zero exit for {}: {}",
             repo_path.display(),
             stderr.trim()
         );
@@ -97,18 +97,18 @@ mod tests {
 
     #[test]
     fn empty_output_yields_empty_vec() {
-        assert!(parse_git_log(EMPTY, "cantalog").is_empty());
+        assert!(parse_git_log(EMPTY, "happycampr_carousels").is_empty());
     }
 
     #[test]
     fn single_commit_is_parsed() {
-        let activities = parse_git_log(SINGLE, "cantalog");
+        let activities = parse_git_log(SINGLE, "happycampr_carousels");
         assert_eq!(activities.len(), 1);
         let a = &activities[0];
         assert_eq!(a.source, ActivitySource::GitCommit);
-        assert_eq!(a.chip, "cantalog");
+        assert_eq!(a.chip, "happycampr_carousels");
         assert_eq!(a.summary, "feat(db): add entries table migration");
-        assert!(a.id.starts_with("git:cantalog:a1b2c3d4"));
+        assert!(a.id.starts_with("git:happycampr_carousels:a1b2c3d4"));
         assert!(a.included);
         // 14:32 PDT is 21:32 UTC.
         assert_eq!(a.timestamp.to_rfc3339(), "2026-04-19T21:32:11+00:00");
@@ -116,16 +116,16 @@ mod tests {
 
     #[test]
     fn multi_commit_preserves_log_order() {
-        let activities = parse_git_log(MULTI, "cantalog");
+        let activities = parse_git_log(MULTI, "happycampr_carousels");
         assert_eq!(activities.len(), 3);
         assert_eq!(activities[0].summary, "feat(db): add entries table migration");
         assert_eq!(activities[1].summary, "fix: handle empty git log output");
-        assert_eq!(activities[2].summary, "chore: rename project to cantalog");
+        assert_eq!(activities[2].summary, "chore: rename project to happycampr_carousels");
     }
 
     #[test]
     fn blank_lines_are_skipped() {
-        let activities = parse_git_log(WITH_BLANKS, "cantalog");
+        let activities = parse_git_log(WITH_BLANKS, "happycampr_carousels");
         assert_eq!(activities.len(), 2);
     }
 
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn fetch_today_returns_empty_for_non_repo() {
-        let non_repo = std::env::temp_dir().join("cantalog-test-not-a-repo");
+        let non_repo = std::env::temp_dir().join("happycampr-carousels-test-not-a-repo");
         std::fs::create_dir_all(&non_repo).unwrap();
         let activities = fetch_today(&non_repo).unwrap();
         assert!(activities.is_empty());

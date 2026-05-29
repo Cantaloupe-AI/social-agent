@@ -31,14 +31,14 @@ pub async fn fetch_today_activities() -> Result<Vec<Activity>, String> {
         match git::fetch_today(repo) {
             Ok(mut xs) => activities.append(&mut xs),
             Err(e) => eprintln!(
-                "cantalog: git fetch failed for {}: {e}",
+                "happycampr: git fetch failed for {}: {e}",
                 repo.display()
             ),
         }
     }
     match claude_code::scan_projects(&cfg.claude_code.projects_dir, reference) {
         Ok(mut xs) => activities.append(&mut xs),
-        Err(e) => eprintln!("cantalog: claude scan failed: {e}"),
+        Err(e) => eprintln!("happycampr: claude scan failed: {e}"),
     }
     activities.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
     Ok(activities)
@@ -235,7 +235,7 @@ pub async fn generate_carousel_pdf(
     }
 
     // 2. Validate inputs, pick the run dir, and persist run-start state.
-    //    This is the Tauri-free core shared with `cantalog-cli`.
+    //    This is the Tauri-free core shared with `happycampr-carousels-cli`.
     let base_dir = crate::config::default_base_dir().map_err(|e| e.to_string())?;
     let root = generation::repo_root()?;
     let ctx = generation::prepare_run(&base_dir, &root, &carousel_id)?;
@@ -472,7 +472,7 @@ pub async fn cancel_generation(
         if let Err(e) = child.kill() {
             // ESRCH (already exited) is harmless; anything else is worth a line
             // but don't fail the cancel — the watcher will still reap.
-            eprintln!("cantalog: cancel_generation kill: {e}");
+            eprintln!("happycampr: cancel_generation kill: {e}");
         }
     }
     drop(guard);

@@ -10,7 +10,7 @@ export interface KeyboardHandlers {
 }
 
 /**
- * Global keyboard shortcuts for Cantalog:
+ * Global keyboard shortcuts for Happycampr Carousels:
  * - j / ArrowDown → onNext (move selection down)
  * - k / ArrowUp   → onPrev (move selection up)
  * - x / Space     → onToggle (toggle selected activity)

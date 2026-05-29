@@ -28,31 +28,47 @@ import { ORIENTATION_DIMS, renderSlide, type Orientation } from "./render-slide.
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const DATA_DIR = join(homedir(), "Library", "Application Support", "cantalog");
+const DATA_DIR = join(homedir(), "Library", "Application Support", "happycampr-carousels");
 const DB_PATH = join(DATA_DIR, "db.sqlite");
 
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
 const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
 
 /**
- * Source path of the brand logo + the per-slide filename the agent
- * embeds. We copy the asset into each slide's working dir at run start
- * so the generated HTML can reference it by simple relative path
+ * Brand logo lockups + the per-slide filenames the agent embeds. Both
+ * variants are copied into each slide's working dir at run start so the
+ * generated HTML can reference one by a simple relative path
  * (`<img src="happycampr-logo.svg">`). Keeps the slide folder
  * self-contained — puppeteer's `file://` resolver picks it up without
  * any absolute paths leaking into the HTML.
  *
- * Until theming lands, this is the only brand identity. See
- * `design/carousel.manifest.json#branding.themingFutureWork` for the
- * future-state plan.
+ * Two variants ship because the wordmark must stay legible on whatever
+ * surface the slide header sits on. The agent picks per slide background:
+ *   - `happycampr-logo.svg`         — burnt lockup, for the default
+ *                                     marshmallow (light) surface.
+ *   - `happycampr-logo-inverse.svg` — marshmallow lockup, for the
+ *                                     burnt (dark) surface-inverse slide
+ *                                     (e.g. takeaway).
+ * The selection rule lives in design-tokens.json#branding,
+ * happycampr.design-contracts.json#branding.headerLogo, and the agent
+ * prompts. See carousel.manifest.json#branding.themingFutureWork for the
+ * future multi-brand plan.
  */
-const HEADER_LOGO_SRC_PATH = join(
-  REPO_ROOT,
-  "design",
-  "assets",
-  "happycampr-logo-full.svg",
-);
-const HEADER_LOGO_FILENAME = "happycampr-logo.svg";
+const HEADER_LOGOS = [
+  {
+    src: join(REPO_ROOT, "design", "assets", "happycampr-logo-full.svg"),
+    filename: "happycampr-logo.svg",
+  },
+  {
+    src: join(
+      REPO_ROOT,
+      "design",
+      "assets",
+      "happycampr-logo-full-marshmallow.svg",
+    ),
+    filename: "happycampr-logo-inverse.svg",
+  },
+];
 
 /**
  * Design files inlined into every agent's system prompt at run start.
@@ -63,7 +79,7 @@ const DESIGN_SPEC_FILES = [
   "design/design-tokens.json",
   "design/carousel-manifest.md",
   "design/carousel.manifest.json",
-  "design/cantaloupe.design-contracts.json",
+  "design/happycampr.design-contracts.json",
   "design/carousel_example.md",
 ];
 
@@ -702,6 +718,7 @@ async function generateSlide(opts: {
   implModel: string;
   managerModel: string;
   orientation: Orientation;
+  force: boolean;
   log: (line: string) => void;
 }) {
   const {
@@ -714,6 +731,7 @@ async function generateSlide(opts: {
     implModel,
     managerModel,
     orientation,
+    force,
     log,
   } = opts;
   const slideFolderName = `${String(slideIndex).padStart(2, "0")}-${slide.id}`;
@@ -723,20 +741,30 @@ async function generateSlide(opts: {
   // Freeze the source markdown at run start.
   await writeFile(join(slideDir, "source.md"), slide.content, "utf8");
 
-  // Copy the brand logo into the slide dir so the agent's HTML can
-  // reference it with `<img src="happycampr-logo.svg">` and puppeteer
-  // resolves it relative to the file:// URL of the rendered HTML.
-  // copyFile (rather than symlink) is intentional: the slide dir is
-  // committed to disk as the run's artifact, and a symlink that points
-  // back into the repo would break if the repo moves.
-  await copyFile(HEADER_LOGO_SRC_PATH, join(slideDir, HEADER_LOGO_FILENAME));
+  // Copy both brand logo variants into the slide dir so the agent's HTML
+  // can reference one with `<img src="happycampr-logo.svg">` (or the
+  // inverse) and puppeteer resolves it relative to the file:// URL of the
+  // rendered HTML. copyFile (rather than symlink) is intentional: the
+  // slide dir is committed to disk as the run's artifact, and a symlink
+  // that points back into the repo would break if the repo moves.
+  for (const logo of HEADER_LOGOS) {
+    await copyFile(logo.src, join(slideDir, logo.filename));
+  }
 
   // Skip the agent loop if we have a previously-accepted version whose
   // markdown matches the current slide content. The PDF concat step picks
   // up the prior run's pdf via slide_versions.pdf_path (latest version
   // wins), so we don't need to insert a new version row — the existing
   // accepted one IS the current one.
-  const accepted = findLatestAcceptedVersion(db, slide.id);
+  //
+  // `force` (HAPPYCAMPR_FORCE=1 / `generate --force`) disables this. The
+  // skip is keyed on slide markdown only; it cannot see that the design
+  // spec, agent prompts, or brand assets changed. After any spec/asset
+  // edit, force a re-render so accepted slides pick up the new rules.
+  const accepted = force ? null : findLatestAcceptedVersion(db, slide.id);
+  if (force) {
+    log("  ⟳ force: re-rendering even though markdown is unchanged");
+  }
   if (accepted) {
     const priorSourcePath = join(dirname(accepted.html_path), "source.md");
     const priorPdfMissing =
@@ -875,10 +903,15 @@ async function main() {
   const orientation = resolveOrientation(carousel.orientation);
   const dims = ORIENTATION_DIMS[orientation];
 
+  // Force re-render of every slide, bypassing the markdown-unchanged skip.
+  // Set when the spec/prompts/assets changed and accepted slides are stale.
+  const force = process.env.HAPPYCAMPR_FORCE === "1";
+
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
   log(`Models: impl=${implModel}, manager=${managerModel}`);
   log(`Orientation: ${orientation} (${dims.widthPx} × ${dims.heightPx})`);
+  if (force) log("Force mode: re-rendering all slides (skip disabled)");
 
   // Read the design spec ONCE up front and embed it into both agents'
   // system prompts. This avoids the per-iteration Read-tool round trips
@@ -896,7 +929,7 @@ async function main() {
     `ACTIVE ORIENTATION: ${orientation} (${dims.widthPx} × ${dims.heightPx})`,
     `Use the \`${orientation}\` branch of every per-orientation rule below`,
     `(orientations.${orientation} in carousel.manifest.json,`,
-    ` canvas.${orientation} in cantaloupe.design-contracts.json,`,
+    ` canvas.${orientation} in happycampr.design-contracts.json,`,
     ` layout.canvas.${orientation} in design-tokens.json,`,
     ` and the maxColumnPx.${orientation} variants for body / code).`,
     `Ignore the other branch.`,
@@ -923,6 +956,7 @@ async function main() {
         implModel,
         managerModel,
         orientation,
+        force,
         log,
       });
       log(`✓ slide ${i + 1} done`);

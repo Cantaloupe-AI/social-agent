@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "cantalog",
+      "name": "happycampr-carousels",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.119",
         "@tauri-apps/api": "^2",

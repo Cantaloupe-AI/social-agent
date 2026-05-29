@@ -1,6 +1,6 @@
 {
   "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
-  "$description": "happycampr render-ready tokens. Ported from mimir/design/happycampr.tokens.json (brand layer: four colors, Inter, radius, editorial type) over the preserved Cantaloupe carousel scaffold (Tailwind spacing, per-orientation layout, canvas-physics type scale + line-height/tracking pairing). The four-colour palette cannot fill every role the carousel system needs (warning/complement/code/chart, mono); every compromise is documented in design/ambiguous.md. Companion: cantaloupe.design-contracts.json (validation, filename intentionally unchanged so code/CLAUDE.md refs don't break), carousel.manifest.json (numeric mirror).",
+  "$description": "happycampr render-ready tokens. Ported from mimir/design/happycampr.tokens.json (brand layer: four colors, Inter, radius, editorial type) over the preserved carousel scaffold (Tailwind spacing, per-orientation layout, canvas-physics type scale + line-height/tracking pairing). The four-colour palette cannot fill every role the carousel system needs (warning/complement/code/chart, mono); every compromise is documented in design/ambiguous.md. Companion: happycampr.design-contracts.json (validation), carousel.manifest.json (numeric mirror).",
   "happycampr": {
     "color": {
       "base": {
@@ -91,7 +91,7 @@
         }
       },
       "semantic": {
-        "$description": "Role-based aliases. Consumers should prefer these. The four-colour palette collapses several Cantaloupe roles: warning has no amber (→ graham), complement has no mulberry (→ burnt/ink), code/chart reuse graham+moss. Rationale + the 'never Burnt on Moss / Graham on Moss for text' contrast rule in design/ambiguous.md §13.",
+        "$description": "Role-based aliases. Consumers should prefer these. The four-colour palette collapses several scaffold roles: warning has no amber (→ graham), complement has no mulberry (→ burnt/ink), code/chart reuse graham+moss. Rationale + the 'never Burnt on Moss / Graham on Moss for text' contrast rule in design/ambiguous.md §13.",
         "surface": {
           "default": { "$type": "color", "$value": "{happycampr.color.base.marshmallow}", "$description": "Default page surface." },
           "inverse": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Dark/takeaway surface." }
@@ -136,7 +136,7 @@
       },
       "weight": {
         "$type": "fontWeight",
-        "$description": "happycampr caps at 700. The Cantaloupe scaffold used 800 for title/display; those drop to 700 (bold) to honour the brand — see design/ambiguous.md §13.",
+        "$description": "happycampr caps at 700. The carousel scaffold used 800 for title/display; those drop to 700 (bold) to honour the brand — see design/ambiguous.md §13.",
         "regular": { "$value": 400 },
         "medium": { "$value": 500 },
         "semibold": { "$value": 600 },
@@ -158,7 +158,7 @@
       }
     },
     "typography": {
-      "$description": "CAROUSEL CANVAS PHYSICS — preserved from the Cantaloupe scaffold unchanged except font family (Inter, already shared) and weights (800→700, happycampr cap). Sizes/line-heights/tracking are LinkedIn-canvas constraints the contracts enforce (e.g. title at 104px needs LH >= 1.05 or descenders collide). happycampr's editorial web type scale lives under typography.brand and is NOT for carousels.",
+      "$description": "CAROUSEL CANVAS PHYSICS — preserved from the carousel scaffold unchanged except font family (Inter, already shared) and weights (800→700, happycampr cap). Sizes/line-heights/tracking are LinkedIn-canvas constraints the contracts enforce (e.g. title at 104px needs LH >= 1.05 or descenders collide). happycampr's editorial web type scale lives under typography.brand and is NOT for carousels.",
       "family": {
         "display": { "$type": "fontFamily", "$value": "{happycampr.font.family.base}" },
         "body": { "$type": "fontFamily", "$value": "{happycampr.font.family.base}" },
@@ -209,7 +209,7 @@
       }
     },
     "spacing": {
-      "$description": "CAROUSEL SCAFFOLD — preserved from Cantaloupe. Tailwind scale (0.25rem base). Keys match Tailwind step numbers. These are 8-grid canvas constraints, not brand values.",
+      "$description": "CAROUSEL SCAFFOLD — preserved. Tailwind scale (0.25rem base). Keys match Tailwind step numbers. These are 8-grid canvas constraints, not brand values.",
       "0": { "$type": "dimension", "$value": { "value": 0, "unit": "rem" }, "$description": "0" },
       "1": { "$type": "dimension", "$value": { "value": 0.25, "unit": "rem" }, "$description": "4px" },
       "2": { "$type": "dimension", "$value": { "value": 0.5, "unit": "rem" }, "$description": "8px base grid" },
@@ -226,7 +226,7 @@
       "24": { "$type": "dimension", "$value": { "value": 6.0, "unit": "rem" }, "$description": "96px · page horizontal" }
     },
     "layout": {
-      "$description": "CAROUSEL SCAFFOLD — preserved from Cantaloupe. Canvas, page margins, column widths are per-orientation; the rule offset is type-driven and stays shared. References spacing tokens.",
+      "$description": "CAROUSEL SCAFFOLD — preserved. Canvas, page margins, column widths are per-orientation; the rule offset is type-driven and stays shared. References spacing tokens.",
       "canvas": {
         "vertical": {
           "width": { "$type": "dimension", "$value": { "value": 1080, "unit": "px" } },
@@ -276,11 +276,13 @@
       }
     },
     "branding": {
-      "$description": "happycampr header lockup. The full vector lockup (marshmallow mark + 'happycampr' wordmark) in brand colours #F5F1E8 fill / #2B1810 stroke.",
+      "$description": "happycampr header lockup. The full vector lockup is the 'happycampr' mark + wordmark. It ships in two colourways that differ by the WORDMARK colour (the 'happycampr' letters — the part that must stay readable): a burnt-wordmark lockup and a marshmallow-wordmark lockup. ALWAYS pick the variant whose WORDMARK contrasts with the slide background, so the word is legible — do not select by the small mark/accent colour. Both share the native viewBox 1080×220 (aspect 54:11), so width at any height is identical.",
       "logo": {
-        "asset": { "$type": "string", "$value": "design/assets/happycampr-logo-full.svg", "$description": "Full lockup, vector, native viewBox 1080×220 (aspect 54:11)." },
-        "mark": { "$type": "string", "$value": "design/assets/happycampr-mark-graham.png", "$description": "Standalone marshmallow mark in graham, 1332×1386." },
-        "mark-small": { "$type": "string", "$value": "design/assets/happycampr-mark-graham-120.png", "$description": "Standalone marshmallow mark, 120×125 — use below the 120px lockup min-width." },
+        "default": { "$type": "string", "$value": "design/assets/happycampr-logo-full.svg", "$description": "Burnt-WORDMARK lockup (#2B1810 letters, small marshmallow accent). USE ON light/marshmallow backgrounds, where a burnt wordmark contrasts. Native viewBox 1080×220 (aspect 54:11). Driver copies this into the slide dir as `happycampr-logo.svg`." },
+        "inverse": { "$type": "string", "$value": "design/assets/happycampr-logo-full-marshmallow.svg", "$description": "Marshmallow-WORDMARK lockup (#F5F1E8 letters, small burnt accent). USE ON dark/burnt backgrounds (surface-inverse slides, e.g. takeaway), where a marshmallow wordmark contrasts. Native viewBox 1080×220 (aspect 54:11). Driver copies this into the slide dir as `happycampr-logo-inverse.svg`." },
+        "selection-rule": { "$type": "string", "$value": "Pick by WORDMARK contrast against the background, not by the mark/accent: dark/burnt background → marshmallow-wordmark lockup (happycampr-logo-inverse.svg); light/marshmallow background → burnt-wordmark lockup (happycampr-logo.svg). The 'happycampr' word must always be clearly readable.", "$description": "Which lockup goes on which slide surface — decided by which wordmark colour contrasts." },
+        "mark": { "$type": "string", "$value": "design/assets/happycampr-mark-graham.png", "$description": "Standalone mark in graham, 1332×1386. graham reads on both light and dark — fallback when the full wordmark does not fit." },
+        "mark-small": { "$type": "string", "$value": "design/assets/happycampr-mark-graham-120.png", "$description": "Standalone graham mark, 120×125 — use below the 120px lockup min-width." },
         "native-aspect": { "$type": "string", "$value": "54:11" }
       }
     }

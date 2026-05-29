@@ -21,7 +21,7 @@ function fixture(id: string, included = true): Activity {
     source: "git_commit",
     timestamp: "2026-04-19T14:32:11Z",
     summary: `commit ${id}`,
-    chip: "cantalog",
+    chip: "happycampr_carousels",
     included,
   };
 }

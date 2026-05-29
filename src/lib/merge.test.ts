@@ -8,7 +8,7 @@ function activity(id: string, timestamp: string, included = true): Activity {
     source: "git_commit",
     timestamp,
     summary: `commit ${id}`,
-    chip: "cantalog",
+    chip: "happycampr_carousels",
     included,
   };
 }

@@ -5,10 +5,34 @@ use std::path::{Path, PathBuf};
 pub const CONFIG_FILENAME: &str = "config.toml";
 
 pub fn default_base_dir() -> Result<PathBuf> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| anyhow!("could not resolve OS data directory"))?
-        .join("cantalog");
+    let data = dirs::data_dir()
+        .ok_or_else(|| anyhow!("could not resolve OS data directory"))?;
+    let dir = data.join("happycampr-carousels");
+    migrate_legacy_base_dir(&data, &dir)?;
     Ok(dir)
+}
+
+/// One-time move of the pre-rebrand data directory to the
+/// `happycampr-carousels` location. Idempotent: it runs only when the new
+/// directory does not yet exist and the legacy one does, so an existing
+/// install's `config.toml`, `db.sqlite`, and `carousels/` survive the
+/// rename instead of being orphaned. The error propagates — a failed move
+/// must not silently start the app against an empty database.
+fn migrate_legacy_base_dir(data_dir: &Path, new_dir: &Path) -> Result<()> {
+    if new_dir.exists() {
+        return Ok(());
+    }
+    let legacy = data_dir.join("cantalog");
+    if legacy.is_dir() {
+        std::fs::rename(&legacy, new_dir).with_context(|| {
+            format!(
+                "migrating legacy data dir {} -> {}",
+                legacy.display(),
+                new_dir.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 pub fn carousels_dir(base_dir: &Path) -> PathBuf {
@@ -69,7 +93,7 @@ mod tests {
     fn fresh_base_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
-            "cantalog-test-config-{}-{}-{}",
+            "happycampr-carousels-test-config-{}-{}-{}",
             tag,
             std::process::id(),
             n

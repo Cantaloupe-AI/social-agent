@@ -1,5 +1,5 @@
 {
-  "$description": "Validation rules for happycampr carousel rendering. A renderer MUST fail the build on any contract violation. Companion to carousel.manifest.json and design-tokens.json. Filename intentionally unchanged (code + CLAUDE.md reference `cantaloupe.design-contracts.json`); the brand is happycampr. Colour/logo values resolve via design-tokens.json; four-colour-palette compromises are logged in design/ambiguous.md §13.",
+  "$description": "Validation rules for happycampr carousel rendering. A renderer MUST fail the build on any contract violation. Companion to carousel.manifest.json and design-tokens.json. Colour/logo values resolve via design-tokens.json; four-colour-palette compromises are logged in design/ambiguous.md §13.",
   "safeZones": {
     "$description": "Hard minimums in pixels. Violating produces the 'AI slop' look.",
     "shape-to-rule": {
@@ -202,6 +202,12 @@
     "headerLogo": {
       "required": true,
       "assetFilename": "happycampr-logo.svg",
+      "variantBySurface": {
+        "$description": "The lockup ships in two colourways that differ by WORDMARK colour. Select the one whose WORDMARK (the 'happycampr' letters) contrasts with the slide background — that is the part that must stay readable. Do NOT decide by the small mark/accent. Both files are copied into the slide dir; reference the matching one. The wordmark must NEVER blend into its background.",
+        "marshmallowBackground": "happycampr-logo.svg",
+        "burntBackground": "happycampr-logo-inverse.svg",
+        "rule": "Light/marshmallow background → happycampr-logo.svg (burnt wordmark, contrasts on light). Dark/burnt surface-inverse background (e.g. takeaway) → happycampr-logo-inverse.svg (marshmallow wordmark, contrasts on dark)."
+      },
       "position": {
         "top": 24,
         "leftEqualsMarginX": true,
@@ -211,7 +217,7 @@
         "heightPx": 24,
         "widthPx": 118,
         "preserveAspectRatio": true,
-        "$note": "happycampr lockup native viewBox 1080×220 (aspect 54:11). At 24px height the width is 24 × 1080/220 ≈ 118 px (was 132 for the Cantaloupe 160:29 lockup). See design/ambiguous.md §13.5."
+        "$note": "happycampr lockup native viewBox 1080×220 (aspect 54:11). At 24px height the width is 24 × 1080/220 ≈ 118 px. See design/ambiguous.md §13.5."
       },
       "minClearanceToTopRulePx": 8,
       "rejectIf": [
@@ -219,7 +225,8 @@
         "Logo placed somewhere other than top-left header slot → fail",
         "Logo height > 32 px or < 16 px (must be 24 with native aspect) → fail",
         "Logo bottom edge less than 8 px above topRule → fail",
-        "Color-shifted logo (inverted, recolored, traced) → fail; the happycampr burnt/marshmallow lockup SVG is canonical"
+        "Wordmark does not contrast with the background → fail: burnt-wordmark lockup (happycampr-logo.svg) on a burnt/dark surface, or marshmallow-wordmark lockup (happycampr-logo-inverse.svg) on a marshmallow/light surface. The 'happycampr' letters must be clearly legible — if the wordmark blends into the background (even if a small mark/accent is still visible) it is a fail (see variantBySurface).",
+        "Recolored, inverted-by-CSS-filter, or traced logo → fail; reference one of the two shipped lockup SVGs unmodified (the burnt and marshmallow colourways are the only canonical variants)"
       ]
     }
   },

@@ -108,7 +108,7 @@ export function useSlides(carouselId: string): UseSlidesResult {
         await updateSlideTitleCmd(id, normalized);
         setError(null);
       } catch (e: unknown) {
-        console.error("cantalog: updateSlideTitle failed", e);
+        console.error("happycampr: updateSlideTitle failed", e);
         setError(String(e));
         throw e;
       }
@@ -142,7 +142,7 @@ export function useSlides(carouselId: string): UseSlidesResult {
         await reorderSlidesCmd(carouselId, orderedIds);
         setError(null);
       } catch (e: unknown) {
-        console.error("cantalog: reorderSlides failed", e);
+        console.error("happycampr: reorderSlides failed", e);
         setError(String(e));
         // Revert by re-fetching authoritative state.
         try {
@@ -150,7 +150,7 @@ export function useSlides(carouselId: string): UseSlidesResult {
           setSlides(xs);
         } catch (refreshErr) {
           console.error(
-            "cantalog: refetch after failed reorder also failed",
+            "happycampr: refetch after failed reorder also failed",
             refreshErr,
           );
         }

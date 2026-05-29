@@ -24,7 +24,7 @@ function isTauri(): boolean {
 async function call<T>(cmd: string, args?: InvokeArgs): Promise<T> {
   if (!isTauri()) {
     throw new Error(
-      "Cantalog is running in browser preview mode — launch with `bun run tauri dev` to use Tauri commands.",
+      "Happycampr Carousels is running in browser preview mode — launch with `bun run tauri dev` to use Tauri commands.",
     );
   }
   return invoke<T>(cmd, args);

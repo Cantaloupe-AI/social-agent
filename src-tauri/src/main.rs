@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    cantalog_lib::run()
+    happycampr_carousels_lib::run()
 }

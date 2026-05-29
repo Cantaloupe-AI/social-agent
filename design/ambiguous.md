@@ -2,7 +2,7 @@
 
 §1–§12 are ported from `mimir/design/ambiguous.md` (the brand-bible → DTCG port).
 §13 is repo-specific: it records every place the four-colour happycampr palette
-could not fill a role the **Cantaloupe carousel scaffold** required, and the
+could not fill a role the **carousel scaffold** required, and the
 decision taken. The scaffold (spacing, per-orientation layout, canvas-physics
 type scale + line-height/tracking floors) was deliberately preserved — those are
 LinkedIn-canvas constraints the contracts enforce, not brand identity.
@@ -97,19 +97,19 @@ in components showing tabular numbers.
 
 ---
 
-## 13. happycampr → Cantaloupe-carousel scaffold mapping (repo-specific)
+## 13. happycampr palette → carousel scaffold mapping (repo-specific)
 
-The carousel system was built for Cantaloupe's role-based palette (6+ chromatic
+The carousel system was built for a role-based palette (6+ chromatic
 roles + code colours + a 4-colour chart series palette) plus a JetBrains-Mono
 code face. happycampr is **four flat colours, Inter-only**. Per the agreed
 approach ("derive + keep scaffold"), the scaffold is unchanged and the palette
-is mapped onto the roles. Every collapse is below. `cantaloupe.design-contracts.json`,
-`carousel.manifest.json`, and `carousel-manifest.md` keep their filenames
-(code/CLAUDE.md reference them) but their colour/logo values now resolve here.
+is mapped onto the roles. Every collapse is below. `happycampr.design-contracts.json`,
+`carousel.manifest.json`, and `carousel-manifest.md` hold the
+collision-prevention rules; their colour/logo values now resolve here.
 
 ### 13.1 Colour role mapping
 
-| Scaffold role | Cantaloupe was | happycampr now | Hex | Note |
+| Scaffold role | Prior value | happycampr now | Hex | Note |
 |---|---|---|---|---|
 | `surface` | bone | marshmallow | `#F5F1E8` | Replaces white everywhere. |
 | `surface-inverse` | near-black forest | burnt | `#2B1810` | Takeaway slide. |
@@ -146,14 +146,14 @@ treatment and this note is the trigger to revisit.
 
 ### 13.4 Heading weight 800 → 700
 
-The Cantaloupe scaffold set `title-sm`/`title`/`display` at weight **800**.
+The carousel scaffold set `title-sm`/`title`/`display` at weight **800**.
 happycampr caps at **700** (bold). All three drop to 700 across
 `design-tokens.json`, `carousel.manifest.json`, `carousel-manifest.md`, and the
 example. Line-height/tracking floors are unchanged (physics).
 
 ### 13.5 Header logo
 
-Cantaloupe's `cantaloupe-logo-full-green.svg` (native 160:29) is removed.
+The legacy full-lockup green logo (native 160:29) is removed.
 The header now uses `design/assets/happycampr-logo-full.svg` — the vector
 lockup (marshmallow mark + "happycampr" wordmark), native viewBox 1080×220
 (**aspect 54:11**). At the fixed 24px header height the rendered width is
@@ -165,7 +165,7 @@ sub-120px case.
 ### 13.6 Source of assets
 
 The marshmallow mark + wordmark were **not present in the Notion workspace**
-the integration can see (only legacy 2022 Cantaloupe logos). They were sourced
+the integration can see (only legacy 2022 logos). They were sourced
 from `~/Downloads` (`happycampr wordmark burnt.svg` → the full lockup;
 `happycampr icon mark graham.png` + the 120×125 variant → the standalone mark).
 If a different canonical asset exists, replace the files in `design/assets/`

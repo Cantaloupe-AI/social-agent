@@ -2,7 +2,7 @@
 title: Manifests for Agents
 subtitle: A Short Essay
 author: Josh
-attribution: Cantaloupe AI
+attribution: happycampr AI
 slug: manifests-for-agents
 plate_count: 5
 ---

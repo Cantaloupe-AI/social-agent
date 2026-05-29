@@ -5,7 +5,7 @@ slug: charts-kitchen-sink
 
 <!-- One plate-chart per Charts.css family. happycampr is a two-
 chromatic palette (graham + moss), so each demo stays <= 2 series.
-Edit the data freely, then: cantalog-cli generate <carousel_id>. -->
+Edit the data freely, then: happycampr-carousels-cli generate <carousel_id>. -->
 
 # Slide 1 :: plate-chart
 

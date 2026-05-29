@@ -112,7 +112,7 @@
 
 <div class="wrap">
   <section class="hero">
-    <div class="kicker">Cantalog · carousel authoring</div>
+    <div class="kicker">Happycampr Carousels · carousel authoring</div>
     <h1>plate-chart slide type (Charts.css)</h1>
     <p class="lede">A new chart slide type for LinkedIn carousels, rendered
       with the pure-CSS <strong>Charts.css</strong> framework. Below: the
@@ -139,7 +139,7 @@
         <td><code>slideTypes.plate-chart</code> + a top-level
         <code>chart</code> config (pinned CDN, palette, plot box, axis,
         forbidden components).</td></tr>
-      <tr><td class="f">design/cantaloupe.<br>design-contracts.json</td>
+      <tr><td class="f">design/happycampr.<br>design-contracts.json</td>
         <td>New <code>chart</code> contract + a <code>stylesheets</code>
         allow-list + the <code>color.chartPlotAreaException</code> carve-out,
         each with <code>rejectIf</code> lists the manager enforces.</td></tr>
@@ -176,7 +176,7 @@
 </div>
 
 <script>
-const STORE_KEY = "cantalog.decisions.plate-chart";
+const STORE_KEY = "happycampr_carousels.decisions.plate-chart";
 const GENERATED_AT = "2026-05-18";
 
 const DECISIONS = [
@@ -244,7 +244,7 @@ const DECISIONS = [
 const CHANGE_NOTES = [
   {id:"C1", file:"design/carousel-manifest.md"},
   {id:"C2", file:"design/carousel.manifest.json"},
-  {id:"C3", file:"design/cantaloupe.design-contracts.json"},
+  {id:"C3", file:"design/happycampr.design-contracts.json"},
   {id:"C4", file:"design/carousel_example.md"},
   {id:"C5", file:"prompts/implementation_agent.md"},
   {id:"C6", file:"prompts/manager_agent.md"},
@@ -310,7 +310,7 @@ function escapeHtml(s){ return (s||"").replace(/[&<>"]/g,
 
 function buildExport(){
   return {
-    project:"cantalog",
+    project:"happycampr_carousels",
     topic:"plate-chart (Charts.css) slide type",
     generatedAt:GENERATED_AT,
     exportedAt:new Date().toISOString(),

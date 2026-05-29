@@ -1,6 +1,6 @@
-//! `cantalog-cli` command handlers.
+//! `happycampr-carousels-cli` command handlers.
 //!
-//! The binary (`src/bin/cantalog-cli.rs`) is a thin `clap` parser; all
+//! The binary (`src/bin/happycampr-carousels-cli.rs`) is a thin `clap` parser; all
 //! behaviour lives here as pure functions returning `Result<T, String>`
 //! values (a struct, not printed output) so it is unit-testable against a
 //! temp-dir DB without spawning a process. Side-effecting inputs (stdin,
@@ -420,7 +420,7 @@ pub fn kitchen_sink_deck() -> String {
         "---\ntitle: Charts Kitchen Sink\nslug: charts-kitchen-sink\n---\n\n\
          <!-- One plate-chart per Charts.css family. happycampr is a two-\n\
          chromatic palette (graham + moss), so each demo stays <= 2 series.\n\
-         Edit the data freely, then: cantalog-cli generate <carousel_id>. -->\n",
+         Edit the data freely, then: happycampr-carousels-cli generate <carousel_id>. -->\n",
     );
     for (i, fam) in CHART_FAMILIES.iter().enumerate() {
         out.push('\n');
@@ -599,7 +599,7 @@ mod tests {
     fn fresh_base_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
-            "cantalog-test-cli-{}-{}-{}",
+            "happycampr-carousels-test-cli-{}-{}-{}",
             tag,
             std::process::id(),
             n

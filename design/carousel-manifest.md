@@ -2,7 +2,7 @@
 
 The authoring spec for happycampr LinkedIn carousels. Markdown in, PDF out.
 
-This document is the source of truth for anyone — human or agent — generating a happycampr carousel. Its companion files are `carousel.manifest.json` (machine-readable values) and `cantaloupe.design-contracts.json` (collision-prevention rules — filename intentionally unchanged so code/CLAUDE.md references don't break; the brand is happycampr). Four-colour-palette compromises are logged in `ambiguous.md` §13.
+This document is the source of truth for anyone — human or agent — generating a happycampr carousel. Its companion files are `carousel.manifest.json` (machine-readable values) and `happycampr.design-contracts.json` (collision-prevention rules). Four-colour-palette compromises are logged in `ambiguous.md` §13.
 
 ---
 
@@ -149,13 +149,22 @@ and a 1 px hairline rule below them.
 
 ### Logo (top-left, default)
 
-- Asset: `design/assets/happycampr-logo-full.svg` — the full happycampr
-  lockup (marshmallow mark + wordmark) in brand colours (`#F5F1E8` fill /
-  `#2B1810` stroke). Do **not** recolour, invert, or trace it; do not swap
-  in an icon-only variant in the header slot.
-- Per-slide handling: the driver copies the asset into each slide's working
-  directory as `happycampr-logo.svg`; HTML references it by relative path
-  (`<img src="happycampr-logo.svg" …>`).
+- Asset: the full happycampr lockup (mark + wordmark), shipped in **two
+  colourways** so it stays legible on either header surface. Pick the one
+  that contrasts with the slide background:
+  - `design/assets/happycampr-logo-full.svg` — **burnt** lockup, for
+    light/**marshmallow** slides (cover + all default plates).
+  - `design/assets/happycampr-logo-full-marshmallow.svg` — **marshmallow**
+    lockup, for dark/**burnt** surface-inverse slides (e.g. takeaway).
+  Do **not** recolour, CSS-filter, or trace either; do not swap in an
+  icon-only variant in the header slot. A logo that blends into its
+  background (burnt-on-burnt or marshmallow-on-marshmallow) is a hard fail.
+- Per-slide handling: the driver copies **both** variants into each slide's
+  working directory as `happycampr-logo.svg` (burnt) and
+  `happycampr-logo-inverse.svg` (marshmallow); HTML references the matching
+  one by relative path — `<img src="happycampr-logo.svg" …>` on light
+  slides, `<img src="happycampr-logo-inverse.svg" …>` on the burnt
+  takeaway slide.
 - Position: `top: 24 px, left: 96 px` (vertical) / `left: 128 px` (landscape)
 - Size: `height: 24 px, width: 118 px` (preserves native 1080 × 220 aspect, 54:11)
 - The logo replaces the legacy eyebrow `tag` text on every slide, **including
@@ -417,7 +426,7 @@ shape:
    into the slide's working directory as `happycampr-logo.svg`, then runs the
    implementation agent. The agent's HTML references the logo by filename only.
 4. Apply the layout template matching TYPE
-5. Validate against `cantaloupe.design-contracts.json`:
+5. Validate against `happycampr.design-contracts.json`:
    - Check all text-to-rule clearances
    - Check all shape-to-rule clearances
    - Check line-height floors for multi-line titles
