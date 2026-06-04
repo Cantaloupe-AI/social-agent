@@ -1,4 +1,4 @@
-# Cantalog — Build Status
+# Happycampr Carousels — Build Status
 
 **Date:** 2026-04-19
 **Branch:** `main`
@@ -16,7 +16,7 @@ All five checkpoints green.
 | 2 | `cd src-tauri && cargo test` | ✅ | **28 tests passing** |
 | 3 | `bun run tsc --noEmit && bun run vite build` | ✅ | 0 TS errors; vite bundles 1708 modules (CSS 36.7 KB / JS 298 KB) |
 | 4 | `bun run vitest run` | ✅ | **13 tests passing** |
-| 5 | `bun run tauri build --debug` | ✅ | Built `target/debug/cantalog` (29 MB) + `Cantalog.app` + `Cantalog_0.1.0_aarch64.dmg` |
+| 5 | `bun run tauri build --debug` | ✅ | Built `target/debug/happycampr_carousels` (29 MB) + `Happycampr Carousels.app` + `Happycampr Carousels_0.1.0_aarch64.dmg` |
 
 **41 tests total.**
 
@@ -25,7 +25,7 @@ All five checkpoints green.
 ### Rust (78 total — `cd src-tauri && cargo test`)
 
 The rows below are the v0.1 baseline (28) plus what the carousels/slides
-feature and the `cantalog-cli` work added. `db.rs` in particular grew well
+feature and the `happycampr-carousels-cli` work added. `db.rs` in particular grew well
 past its original 5 rows (carousel + slide + slide-version + slug CRUD); the
 authoritative number is whatever `cargo test` reports (78 as of 2026-05-18).
 
@@ -42,7 +42,7 @@ The generation/agent loop itself (bun → Claude Agent SDK → real PDF) is
 **deliberately not unit-tested** — it's network-bound, costs money, and runs
 for minutes. Its decomposable pieces (`prepare_run`/`spawn_driver`/`finalize`,
 the deck parser, every handler) are unit-tested; the full run is a
-manual/confirmed E2E (`cantalog-cli generate <id>`). No `#[ignore]`.
+manual/confirmed E2E (`happycampr-carousels-cli generate <id>`). No `#[ignore]`.
 
 ### TypeScript (25 total — `bun run vitest run`)
 
@@ -66,12 +66,12 @@ Baseline rows below (13) plus growth from the slides feature
 ### TODO(dep) — considered another dep, used a simpler approach instead
 
 Added since (with justification):
-- **`clap` 4 (`derive` only)** — arg parsing for the new `cantalog-cli`
-  binary. `cantalog-cli` exposes 8 subcommands (`carousel create/list`,
+- **`clap` 4 (`derive` only)** — arg parsing for the new `happycampr-carousels-cli`
+  binary. `happycampr-carousels-cli` exposes 8 subcommands (`carousel create/list`,
   `slide add`, `import`, `generate`, `status`, `open`); hand-rolling that
   with usable `--help` / arg groups / conflicts is error-prone churn for
-  zero benefit. `derive`-only, and only the `cantalog-cli` bin links it —
-  the Tauri app binary and `cantalog_lib` don't use clap, so the shipped
+  zero benefit. `derive`-only, and only the `happycampr-carousels-cli` bin links it —
+  the Tauri app binary and `happycampr_carousels_lib` don't use clap, so the shipped
   app is unaffected. Chosen over a hand-rolled `std::env::args` parser
   (worse UX, more bug surface) per the same reasoning that kept the other
   deps out below.
@@ -94,10 +94,10 @@ The user explicitly asked me to try to click through the UI. Here's what worked 
 
 **What worked:**
 - `bun run dev` serves Vite on :1420 without error (clean log, 132ms startup).
-- `curl http://localhost:1420/` returns our custom `index.html` with `<title>Cantalog</title>` and the dark-mode class on `<html>`.
+- `curl http://localhost:1420/` returns our custom `index.html` with `<title>Happycampr Carousels</title>` and the dark-mode class on `<html>`.
 - `curl http://localhost:1420/src/main.tsx` — Vite's React Fast Refresh-wrapped transpile loads cleanly.
 - `curl http://localhost:1420/src/App.tsx` and `/src/styles/globals.css` both return 200.
-- **Debug binary launch test:** ran `src-tauri/target/debug/cantalog` directly, waited 3 seconds, binary was still alive (no startup crash, no stderr). Killed cleanly. This confirms:
+- **Debug binary launch test:** ran `src-tauri/target/debug/happycampr_carousels` directly, waited 3 seconds, binary was still alive (no startup crash, no stderr). Killed cleanly. This confirms:
   - Tauri builder initializes.
   - `tauri_plugin_dialog` registers.
   - All 5 invoke handlers register.
@@ -131,12 +131,12 @@ The user explicitly asked me to try to click through the UI. Here's what worked 
 10. `Esc` with unsaved thoughts → confirm dialog; with no changes → closes quietly.
 
 If anything on this list breaks, check:
-- App Support dir: `~/Library/Application Support/cantalog/config.toml` and `~/Library/Application Support/cantalog/db.sqlite` should exist after first save.
+- App Support dir: `~/Library/Application Support/happycampr-carousels/config.toml` and `~/Library/Application Support/happycampr-carousels/db.sqlite` should exist after first save.
 - Console in the WKWebView devtools (right-click → inspect) for invoke errors.
 
 ## Deviations from the spec you should know about
 
-1. **Repo root layout is flat, not nested under `cantalog/`.** The spec shows `cantalog/` as the tree root; I'm using the existing `social-agent/` directory as-is and renaming internal identifiers. No nested `cantalog/` folder was created.
+1. **Repo root layout is flat, not nested under `happycampr_carousels/`.** The spec shows `happycampr_carousels/` as the tree root; I'm using the existing `social-agent/` directory as-is and renaming internal identifiers. No nested `happycampr_carousels/` folder was created.
 2. **No `tailwind.config.js`.** Tailwind v4 uses CSS-first config (`@theme inline` in `globals.css`), which the scaffold already had. Creating a dead `tailwind.config.js` would've been cargo-culted.
 3. **Shadcn primitives at `src/components/ui/`**, not alongside them at repo-root `components/`. Moved in Phase A so the `@/*` alias (→ `./src/*`) resolves cleanly. App components at `src/components/*` match the spec.
 4. **`tauri-plugin-opener` removed.** Spec didn't list it; unused.
@@ -155,9 +155,9 @@ If anything on this list breaks, check:
 - ✅ **Window close after save now terminates the process.** Added a `quit_app` Tauri command that calls `AppHandle::exit(0)`, and Save + Escape now invoke it via `quitApp()` instead of `getCurrentWindow().close()`. Without this, macOS's default AppKit behavior (keep the app alive when the last window closes) conflicted with the spec's "app closes itself after save" — the dock icon would stay.
 - ✅ **ConfigDialog with a null config now shows a recovery message** explaining the likely cause (missing/corrupt `config.toml`) and the fix (restart; it auto-creates defaults). Previously the dialog opened with all inputs disabled and no explanation.
 
-## CLI (`cantalog-cli`)
+## CLI (`happycampr-carousels-cli`)
 
-A second binary in the `cantalog` crate (`[[bin]]` in `Cargo.toml`;
+A second binary in the `happycampr_carousels` crate (`[[bin]]` in `Cargo.toml`;
 `src/main.rs` stays the app binary via Cargo autodiscovery) that drives the
 **same** SQLite + bun pipeline the Tauri app uses — for testing the core
 loop and for other agents.
@@ -166,7 +166,7 @@ loop and for other agents.
 > with *"failed to find main binary"* — with >1 bin and no
 > `package.default-run`, Tauri can't infer the app binary. `cargo test` /
 > `cargo build` don't surface this (they build all bins). Fix:
-> `default-run = "cantalog"` in `[package]`. Caught by running the full
+> `default-run = "happycampr_carousels"` in `[package]`. Caught by running the full
 > `tauri build --debug`, not just `cargo test`.
 
 - **Refactor (behavior-preserving):** the Tauri-free guts of
@@ -220,13 +220,13 @@ src-tauri/src/
 ├── commands.rs        — Tauri commands (thin wrappers); generate_carousel_pdf
 │                          parks the child + watcher, delegates core to generation.rs
 ├── generation.rs      — Tauri-free generation core shared by the Tauri command
-│                          and cantalog-cli (8 tests)
-├── cli.rs             — cantalog-cli handlers + parse_deck, pure/Result-returning (17 tests)
-├── bin/cantalog-cli.rs — thin clap parser over cli.rs
+│                          and happycampr-carousels-cli (8 tests)
+├── cli.rs             — happycampr-carousels-cli handlers + parse_deck, pure/Result-returning (17 tests)
+├── bin/happycampr-carousels-cli.rs — thin clap parser over cli.rs
 ├── config.rs          — load/save TOML + default_config() (3 tests)
 ├── db.rs              — open, migrate, entry + carousel/slide CRUD
 ├── lib.rs             — module tree + Tauri builder + plugin + handler registration
-├── main.rs            — delegates to cantalog_lib::run (default app binary)
+├── main.rs            — delegates to happycampr_carousels_lib::run (default app binary)
 ├── types.rs           — Activity, Entry, Config, ActivitySource, GitConfig, ClaudeCodeConfig
 └── sources/
     ├── mod.rs         — re-exports claude_code + git
@@ -271,7 +271,7 @@ bun install
 bun run tauri dev    # runs Vite + launches the Tauri window
 # or to ship a local binary:
 bun run tauri build --debug
-open src-tauri/target/debug/bundle/macos/Cantalog.app
+open src-tauri/target/debug/bundle/macos/Happycampr Carousels.app
 ```
 
 ## Nothing was skipped, hidden, or faked

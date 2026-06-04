@@ -1,0 +1,290 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "$description": "happycampr render-ready tokens. Ported from mimir/design/happycampr.tokens.json (brand layer: four colors, Inter, radius, editorial type) over the preserved carousel scaffold (Tailwind spacing, per-orientation layout, canvas-physics type scale + line-height/tracking pairing). The four-colour palette cannot fill every role the carousel system needs (warning/complement/code/chart, mono); every compromise is documented in design/ambiguous.md. Companion: happycampr.design-contracts.json (validation), carousel.manifest.json (numeric mirror).",
+  "happycampr": {
+    "color": {
+      "base": {
+        "$description": "happycampr brand palette. Four colours only. Never pure white or pure black. ink/ink-dim/surface/surface-inverse are derived aliases the carousel scaffold needs; ink-dim is burnt flattened at 0.60 alpha over marshmallow (see design/ambiguous.md §13).",
+        "burnt": {
+          "$type": "color",
+          "$value": {
+            "colorSpace": "oklch",
+            "components": [0.2324, 0.0342, 43.5],
+            "alpha": 1,
+            "hex": "#2B1810"
+          },
+          "$description": "Primary dark. Text, headings, dark surfaces, hairline rules."
+        },
+        "graham": {
+          "$type": "color",
+          "$value": {
+            "colorSpace": "oklch",
+            "components": [0.5423, 0.0893, 62.79],
+            "alpha": 1,
+            "hex": "#946334"
+          },
+          "$description": "Primary CTAs, hover states, brand moments. Brand anchor / accent."
+        },
+        "moss": {
+          "$type": "color",
+          "$value": {
+            "colorSpace": "oklch",
+            "components": [0.5048, 0.0516, 131.41],
+            "alpha": 1,
+            "hex": "#5A6B4C"
+          },
+          "$description": "Success states, positive metrics, secondary CTAs."
+        },
+        "marshmallow": {
+          "$type": "color",
+          "$value": {
+            "colorSpace": "oklch",
+            "components": [0.9588, 0.0127, 86.83],
+            "alpha": 1,
+            "hex": "#F5F1E8"
+          },
+          "$description": "All light backgrounds. Replaces white everywhere."
+        },
+        "ink": {
+          "$type": "color",
+          "$value": "{happycampr.color.base.burnt}",
+          "$description": "Primary text and rules. Alias of burnt — the carousel scaffold names this `ink`."
+        },
+        "ink-dim": {
+          "$type": "color",
+          "$value": {
+            "colorSpace": "oklch",
+            "components": [0.5512, 0.0213, 57.0],
+            "alpha": 1,
+            "hex": "#7C6F66"
+          },
+          "$description": "Muted/secondary text on marshmallow. Solid flatten of burnt @0.60 over marshmallow so the renderer has a real colour (carousel PDFs always sit on marshmallow). For UI chrome over arbitrary backgrounds use color.ui.burnt-60 instead. See design/ambiguous.md §13.",
+          "$extensions": { "happycampr.srgb": { "colorSpace": "srgb", "components": [0.4855, 0.4345, 0.4015] } }
+        },
+        "surface": {
+          "$type": "color",
+          "$value": "{happycampr.color.base.marshmallow}",
+          "$description": "Default page surface. Alias of marshmallow."
+        },
+        "surface-inverse": {
+          "$type": "color",
+          "$value": "{happycampr.color.base.burnt}",
+          "$description": "Dark surface (takeaway slide). Alias of burnt."
+        }
+      },
+      "ui": {
+        "$description": "Derived alpha helpers. UI chrome only — never apply to brand surfaces.",
+        "burnt-12": {
+          "$type": "color",
+          "$value": { "colorSpace": "oklch", "components": [0.2324, 0.0342, 43.5], "alpha": 0.12, "hex": "#2B1810" },
+          "$description": "Subtle borders and dividers."
+        },
+        "burnt-20": {
+          "$type": "color",
+          "$value": { "colorSpace": "oklch", "components": [0.2324, 0.0342, 43.5], "alpha": 0.2, "hex": "#2B1810" },
+          "$description": "Soft dividers, secondary borders."
+        },
+        "burnt-60": {
+          "$type": "color",
+          "$value": { "colorSpace": "oklch", "components": [0.2324, 0.0342, 43.5], "alpha": 0.6, "hex": "#2B1810" },
+          "$description": "Muted/secondary text on light surfaces of unknown colour."
+        }
+      },
+      "semantic": {
+        "$description": "Role-based aliases. Consumers should prefer these. The four-colour palette collapses several scaffold roles: warning has no amber (→ graham), complement has no mulberry (→ burnt/ink), code/chart reuse graham+moss. Rationale + the 'never Burnt on Moss / Graham on Moss for text' contrast rule in design/ambiguous.md §13.",
+        "surface": {
+          "default": { "$type": "color", "$value": "{happycampr.color.base.marshmallow}", "$description": "Default page surface." },
+          "inverse": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Dark/takeaway surface." }
+        },
+        "text": {
+          "default": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Body text." },
+          "muted": { "$type": "color", "$value": "{happycampr.color.base.ink-dim}", "$description": "Captions, italic asides." },
+          "accent": { "$type": "color", "$value": "{happycampr.color.base.graham}", "$description": "Accent words in headlines." },
+          "inverse": { "$type": "color", "$value": "{happycampr.color.base.marshmallow}", "$description": "Text on dark surfaces." }
+        },
+        "border": {
+          "default": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Hairline rules." },
+          "muted": { "$type": "color", "$value": "{happycampr.color.base.ink-dim}", "$description": "Soft dividers." }
+        },
+        "accent": {
+          "primary": { "$type": "color", "$value": "{happycampr.color.base.graham}", "$description": "Brand anchor / headline accent / shape fills." },
+          "secondary": { "$type": "color", "$value": "{happycampr.color.base.moss}", "$description": "Tonal sibling. Success, positive metrics." },
+          "warning": { "$type": "color", "$value": "{happycampr.color.base.graham}", "$description": "happycampr has no amber. Maps to graham. graham on marshmallow is WCAG AA body / AAA large (4.6:1) so it doubles as warning-text. See design/ambiguous.md §13." },
+          "complement": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "happycampr has no mulberry. The complement role (code-numbers, rare emphasis) collapses into ink/burnt. See design/ambiguous.md §13." }
+        },
+        "code": {
+          "key": { "$type": "color", "$value": "{happycampr.color.base.graham}", "$description": "Keys/identifiers." },
+          "string": { "$type": "color", "$value": "{happycampr.color.base.moss}", "$description": "String literals." },
+          "number": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Numeric literals. Renders as ink (no mulberry in the palette)." },
+          "punctuation": { "$type": "color", "$value": "{happycampr.color.base.ink-dim}", "$description": "Punctuation." },
+          "text": { "$type": "color", "$value": "{happycampr.color.base.burnt}", "$description": "Default code text." }
+        }
+      }
+    },
+    "font": {
+      "family": {
+        "base": {
+          "$type": "fontFamily",
+          "$description": "Single-font brand system. Inter is the only brand typeface. JetBrains Mono is a carousel-functional exception for code blocks only (see design/ambiguous.md §13) and is NOT a brand font.",
+          "$value": ["Inter", "Inter Variable", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "system-ui", "sans-serif"]
+        },
+        "mono": {
+          "$type": "fontFamily",
+          "$description": "Carousel-functional only (code blocks, list folio numbers). Not part of the happycampr brand — brand is Inter-only.",
+          "$value": ["JetBrains Mono", "SF Mono", "Menlo", "Consolas", "monospace"]
+        }
+      },
+      "weight": {
+        "$type": "fontWeight",
+        "$description": "happycampr caps at 700. The carousel scaffold used 800 for title/display; those drop to 700 (bold) to honour the brand — see design/ambiguous.md §13.",
+        "regular": { "$value": 400 },
+        "medium": { "$value": 500 },
+        "semibold": { "$value": 600 },
+        "bold": { "$value": 700 }
+      }
+    },
+    "border-radius": {
+      "$type": "dimension",
+      "component": { "$value": { "value": 4, "unit": "px" }, "$description": "Cards, swatches, logo cards, icon cards, audience cards." },
+      "pill": { "$value": { "value": 999, "unit": "px" }, "$description": "Grade badges and pill-shaped labels." }
+    },
+    "sizing": {
+      "page": {
+        "padding-vertical": { "$type": "dimension", "$value": { "value": 96, "unit": "px" }, "$description": "Top/bottom padding for full-bleed web sections (brand surfaces, not carousel canvas)." },
+        "max-inner-width": { "$type": "dimension", "$value": { "value": 1280, "unit": "px" }, "$description": "Max width of inner web content area." }
+      },
+      "logo": {
+        "min-width": { "$type": "dimension", "$value": { "value": 120, "unit": "px" }, "$description": "Minimum wordmark/lockup width. Below this, switch to the standalone marshmallow mark (design/assets/happycampr-mark-graham-120.png)." }
+      }
+    },
+    "typography": {
+      "$description": "CAROUSEL CANVAS PHYSICS — preserved from the carousel scaffold unchanged except font family (Inter, already shared) and weights (800→700, happycampr cap). Sizes/line-heights/tracking are LinkedIn-canvas constraints the contracts enforce (e.g. title at 104px needs LH >= 1.05 or descenders collide). happycampr's editorial web type scale lives under typography.brand and is NOT for carousels.",
+      "family": {
+        "display": { "$type": "fontFamily", "$value": "{happycampr.font.family.base}" },
+        "body": { "$type": "fontFamily", "$value": "{happycampr.font.family.base}" },
+        "mono": { "$type": "fontFamily", "$value": "{happycampr.font.family.mono}" }
+      },
+      "weight": {
+        "regular": { "$type": "fontWeight", "$value": 400 },
+        "medium": { "$type": "fontWeight", "$value": 500 },
+        "semibold": { "$type": "fontWeight", "$value": 600 },
+        "bold": { "$type": "fontWeight", "$value": 700 }
+      },
+      "size": {
+        "$description": "rem, aligned to Tailwind text-* where possible. Each tier has a PAIRED line-height — see typography.line-height.",
+        "xs": { "$type": "dimension", "$value": { "value": 0.625, "unit": "rem" }, "$description": "10px · Eyebrows, folios." },
+        "sm": { "$type": "dimension", "$value": { "value": 0.875, "unit": "rem" }, "$description": "14px · Captions." },
+        "base": { "$type": "dimension", "$value": { "value": 1.125, "unit": "rem" }, "$description": "18px · Inline code." },
+        "body": { "$type": "dimension", "$value": { "value": 1.375, "unit": "rem" }, "$description": "22px · Default body." },
+        "body-lg": { "$type": "dimension", "$value": { "value": 1.5, "unit": "rem" }, "$description": "24px · Emphasized body." },
+        "title-sm": { "$type": "dimension", "$value": { "value": 5.25, "unit": "rem" }, "$description": "84px · Secondary titles." },
+        "title": { "$type": "dimension", "$value": { "value": 6.5, "unit": "rem" }, "$description": "104px · Plate headlines." },
+        "display": { "$type": "dimension", "$value": { "value": 8.75, "unit": "rem" }, "$description": "140px · Cover display only." }
+      },
+      "line-height": {
+        "$description": "SIZE-PAIRED line heights. Use the matching LH or larger — never smaller.",
+        "body": { "$type": "number", "$value": 1.55, "$description": "PAIR WITH: body, body-lg." },
+        "code": { "$type": "number", "$value": 1.7, "$description": "PAIR WITH: inline/block code." },
+        "title": { "$type": "number", "$value": 1.05, "$description": "PAIR WITH: title, title-sm. MINIMUM for multi-line headlines in Inter at 84-104px." },
+        "display": { "$type": "number", "$value": 0.95, "$description": "PAIR WITH: display (140px+), single-line or descenders-on-last-line only." },
+        "caption": { "$type": "number", "$value": 1.5, "$description": "PAIR WITH: sm, xs." }
+      },
+      "tracking": {
+        "tighter": { "$type": "number", "$value": -0.055, "$description": "PAIR WITH: display." },
+        "tight": { "$type": "number", "$value": -0.035, "$description": "PAIR WITH: title, title-sm." },
+        "normal": { "$type": "number", "$value": 0.0 },
+        "widest": { "$type": "number", "$value": 0.28, "$description": "All-caps labels." },
+        "widest-plus": { "$type": "number", "$value": 0.38, "$description": "Eyebrow labels." }
+      },
+      "brand": {
+        "$description": "happycampr editorial web type scale (ported verbatim from mimir/design/happycampr.tokens.json). For brand/web surfaces, NOT the carousel canvas — the canvas needs 84-140px titles this scale does not provide. letterSpacing px values are approximations of the original em values at minimum font size (see design/ambiguous.md §2). All-caps tokens (eyebrow) need text-transform applied by the consumer (§3).",
+        "display": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 72, "unit": "px" }, "fontWeight": 600, "letterSpacing": { "value": -3.96, "unit": "px" }, "lineHeight": 0.92 }, "$description": "Original range clamp(72px, 11vw, 168px)." },
+        "h1": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 56, "unit": "px" }, "fontWeight": 600, "letterSpacing": { "value": -2.8, "unit": "px" }, "lineHeight": 1.0 }, "$description": "Original range clamp(56px, 7vw, 96px)." },
+        "h2": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 40, "unit": "px" }, "fontWeight": 500, "letterSpacing": { "value": -1.8, "unit": "px" }, "lineHeight": 1.08 }, "$description": "Original range clamp(40px, 4.5vw, 64px)." },
+        "h3": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 26, "unit": "px" }, "fontWeight": 500, "letterSpacing": { "value": -0.91, "unit": "px" }, "lineHeight": 1.2 }, "$description": "Original range clamp(26px, 2.4vw, 34px)." },
+        "body-lg": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 20, "unit": "px" }, "fontWeight": 400, "letterSpacing": { "value": -0.4, "unit": "px" }, "lineHeight": 1.5 }, "$description": "Original range clamp(20px, 1.6vw, 26px). Measure capped 70ch." },
+        "body": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 18, "unit": "px" }, "fontWeight": 400, "letterSpacing": { "value": -0.216, "unit": "px" }, "lineHeight": 1.6 }, "$description": "Default body. Measure capped 70ch." },
+        "small": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 14, "unit": "px" }, "fontWeight": 400, "letterSpacing": { "value": -0.14, "unit": "px" }, "lineHeight": 1.5 }, "$description": "Small/caption. ink-dim on light, rgba(245,241,232,0.7) on dark." },
+        "eyebrow": { "$type": "typography", "$value": { "fontFamily": "{happycampr.font.family.base}", "fontSize": { "value": 12, "unit": "px" }, "fontWeight": 700, "letterSpacing": { "value": 1.92, "unit": "px" }, "lineHeight": 1.0 }, "$description": "Uppercase label. Apply text-transform: uppercase in the consumer." }
+      }
+    },
+    "spacing": {
+      "$description": "CAROUSEL SCAFFOLD — preserved. Tailwind scale (0.25rem base). Keys match Tailwind step numbers. These are 8-grid canvas constraints, not brand values.",
+      "0": { "$type": "dimension", "$value": { "value": 0, "unit": "rem" }, "$description": "0" },
+      "1": { "$type": "dimension", "$value": { "value": 0.25, "unit": "rem" }, "$description": "4px" },
+      "2": { "$type": "dimension", "$value": { "value": 0.5, "unit": "rem" }, "$description": "8px base grid" },
+      "3": { "$type": "dimension", "$value": { "value": 0.75, "unit": "rem" }, "$description": "12px" },
+      "4": { "$type": "dimension", "$value": { "value": 1.0, "unit": "rem" }, "$description": "16px" },
+      "5": { "$type": "dimension", "$value": { "value": 1.25, "unit": "rem" }, "$description": "20px" },
+      "6": { "$type": "dimension", "$value": { "value": 1.5, "unit": "rem" }, "$description": "24px · text-to-rule safe" },
+      "8": { "$type": "dimension", "$value": { "value": 2.0, "unit": "rem" }, "$description": "32px · shape-to-text safe" },
+      "10": { "$type": "dimension", "$value": { "value": 2.5, "unit": "rem" }, "$description": "40px · shape-to-rule safe" },
+      "12": { "$type": "dimension", "$value": { "value": 3.0, "unit": "rem" }, "$description": "48px · group-to-group safe" },
+      "14": { "$type": "dimension", "$value": { "value": 3.5, "unit": "rem" }, "$description": "56px · rule offset" },
+      "16": { "$type": "dimension", "$value": { "value": 4.0, "unit": "rem" }, "$description": "64px" },
+      "20": { "$type": "dimension", "$value": { "value": 5.0, "unit": "rem" }, "$description": "80px · page top/bottom" },
+      "24": { "$type": "dimension", "$value": { "value": 6.0, "unit": "rem" }, "$description": "96px · page horizontal" }
+    },
+    "layout": {
+      "$description": "CAROUSEL SCAFFOLD — preserved. Canvas, page margins, column widths are per-orientation; the rule offset is type-driven and stays shared. References spacing tokens.",
+      "canvas": {
+        "vertical": {
+          "width": { "$type": "dimension", "$value": { "value": 1080, "unit": "px" } },
+          "height": { "$type": "dimension", "$value": { "value": 1350, "unit": "px" } }
+        },
+        "landscape": {
+          "width": { "$type": "dimension", "$value": { "value": 1920, "unit": "px" } },
+          "height": { "$type": "dimension", "$value": { "value": 1080, "unit": "px" } }
+        }
+      },
+      "page": {
+        "vertical": {
+          "margin-x": { "$type": "dimension", "$value": "{happycampr.spacing.24}" },
+          "margin-top": { "$type": "dimension", "$value": "{happycampr.spacing.20}" },
+          "margin-bottom": { "$type": "dimension", "$value": "{happycampr.spacing.20}" }
+        },
+        "landscape": {
+          "margin-x": { "$type": "dimension", "$value": { "value": 128, "unit": "px" }, "$description": "Wider margins on the 1920px canvas; 128 = 16 × 8-grid." },
+          "margin-top": { "$type": "dimension", "$value": "{happycampr.spacing.20}" },
+          "margin-bottom": { "$type": "dimension", "$value": "{happycampr.spacing.20}" }
+        }
+      },
+      "rule": {
+        "offset-top": { "$type": "dimension", "$value": "{happycampr.spacing.14}" },
+        "offset-bottom": { "$type": "dimension", "$value": "{happycampr.spacing.14}" },
+        "weight": { "$type": "dimension", "$value": { "value": 1, "unit": "px" } }
+      },
+      "column": {
+        "vertical": {
+          "body": { "$type": "dimension", "$value": { "value": 620, "unit": "px" } },
+          "narrow": { "$type": "dimension", "$value": { "value": 520, "unit": "px" } },
+          "title": { "$type": "dimension", "$value": { "value": 820, "unit": "px" } },
+          "code": { "$type": "dimension", "$value": { "value": 720, "unit": "px" } }
+        },
+        "landscape": {
+          "body": { "$type": "dimension", "$value": { "value": 720, "unit": "px" }, "$description": "Single body column. For prose-heavy plates use the bodyTwoCol primitive — see carousel.manifest.json." },
+          "narrow": { "$type": "dimension", "$value": { "value": 600, "unit": "px" } },
+          "title": { "$type": "dimension", "$value": { "value": 1500, "unit": "px" }, "$description": "Hero band for landscape title/cover plates." },
+          "code": { "$type": "dimension", "$value": { "value": 1100, "unit": "px" } },
+          "body-two-col": {
+            "$description": "Editorial two-column body. 720 + 96 + 720 = 1536, centered inside the 1664 content area.",
+            "width": { "$type": "dimension", "$value": { "value": 720, "unit": "px" } },
+            "gutter": { "$type": "dimension", "$value": { "value": 96, "unit": "px" } },
+            "count": { "$type": "number", "$value": 2 }
+          }
+        }
+      }
+    },
+    "branding": {
+      "$description": "happycampr header lockup. The full vector lockup is the 'happycampr' mark + wordmark. It ships in two colourways that differ by the WORDMARK colour (the 'happycampr' letters — the part that must stay readable): a burnt-wordmark lockup and a marshmallow-wordmark lockup. ALWAYS pick the variant whose WORDMARK contrasts with the slide background, so the word is legible — do not select by the small mark/accent colour. Both share the native viewBox 1080×220 (aspect 54:11), so width at any height is identical.",
+      "logo": {
+        "default": { "$type": "string", "$value": "design/assets/happycampr-logo-full.svg", "$description": "Burnt-WORDMARK lockup (#2B1810 letters, small marshmallow accent). USE ON light/marshmallow backgrounds, where a burnt wordmark contrasts. Native viewBox 1080×220 (aspect 54:11). Driver copies this into the slide dir as `happycampr-logo.svg`." },
+        "inverse": { "$type": "string", "$value": "design/assets/happycampr-logo-full-marshmallow.svg", "$description": "Marshmallow-WORDMARK lockup (#F5F1E8 letters, small burnt accent). USE ON dark/burnt backgrounds (surface-inverse slides, e.g. takeaway), where a marshmallow wordmark contrasts. Native viewBox 1080×220 (aspect 54:11). Driver copies this into the slide dir as `happycampr-logo-inverse.svg`." },
+        "selection-rule": { "$type": "string", "$value": "Pick by WORDMARK contrast against the background, not by the mark/accent: dark/burnt background → marshmallow-wordmark lockup (happycampr-logo-inverse.svg); light/marshmallow background → burnt-wordmark lockup (happycampr-logo.svg). The 'happycampr' word must always be clearly readable.", "$description": "Which lockup goes on which slide surface — decided by which wordmark colour contrasts." },
+        "mark": { "$type": "string", "$value": "design/assets/happycampr-mark-graham.png", "$description": "Standalone mark in graham, 1332×1386. graham reads on both light and dark — fallback when the full wordmark does not fit." },
+        "mark-small": { "$type": "string", "$value": "design/assets/happycampr-mark-graham-120.png", "$description": "Standalone graham mark, 120×125 — use below the 120px lockup min-width." },
+        "native-aspect": { "$type": "string", "$value": "54:11" }
+      }
+    }
+  }
+}

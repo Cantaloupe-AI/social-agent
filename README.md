@@ -1,4 +1,4 @@
-# Cantalog
+# Happycampr Carousels
 
 Local-only macOS desktop app for end-of-day activity capture. Shows today's git commits and Claude Code sessions in a checkable list, plus a free-text "anything worth remembering?" field. One screen. Saves to SQLite, closes itself.
 
@@ -11,7 +11,7 @@ bun install
 bun run tauri dev           # launches the app window against Vite HMR
 # or, build a debug binary:
 bun run tauri build --debug
-open src-tauri/target/debug/bundle/macos/Cantalog.app
+open src-tauri/target/debug/bundle/macos/Happycampr Carousels.app
 ```
 
 ## Tests
@@ -21,25 +21,25 @@ cd src-tauri && cargo test  # Rust backend (78 tests)
 bun run vitest run          # Frontend hooks + helpers (25 tests)
 ```
 
-## CLI (`cantalog-cli`)
+## CLI (`happycampr-carousels-cli`)
 
 A scriptable surface over the same SQLite/bun pipeline the app uses — handy
 for testing the generation loop and for other agents. Dev invocation:
 
 ```bash
 cd src-tauri
-cargo run -q --bin cantalog-cli -- <command>
-# or build it once: cargo build --release --bin cantalog-cli
-#   → src-tauri/target/release/cantalog-cli
+cargo run -q --bin happycampr-carousels-cli -- <command>
+# or build it once: cargo build --release --bin happycampr-carousels-cli
+#   → src-tauri/target/release/happycampr-carousels-cli
 
-cantalog-cli carousel create --label "Launch week" [--orientation vertical|landscape]
-cantalog-cli carousel list
-cantalog-cli slide add <carousel-id> --file slide.md  # or --stdin / --content "…"  [--title T]
-cantalog-cli import --new --file deck.md              # splits on `# Slide …` blocks
-cantalog-cli import --carousel <id> --file deck.md    # append to an existing carousel
-cantalog-cli generate <carousel-id>                   # blocks, streams logs, opens the PDF
-cantalog-cli status <carousel-id> [--log 40] [--watch]
-cantalog-cli open <carousel-id>                       # open the generated PDF
+happycampr-carousels-cli carousel create --label "Launch week" [--orientation vertical|landscape]
+happycampr-carousels-cli carousel list
+happycampr-carousels-cli slide add <carousel-id> --file slide.md  # or --stdin / --content "…"  [--title T]
+happycampr-carousels-cli import --new --file deck.md              # splits on `# Slide …` blocks
+happycampr-carousels-cli import --carousel <id> --file deck.md    # append to an existing carousel
+happycampr-carousels-cli generate <carousel-id>                   # blocks, streams logs, opens the PDF
+happycampr-carousels-cli status <carousel-id> [--log 40] [--watch]
+happycampr-carousels-cli open <carousel-id>                       # open the generated PDF
 ```
 
 `generate` runs headless: it supervises the bun driver, prints its output
@@ -53,8 +53,8 @@ text is fed to the design agent).
 
 ## Where data lives
 
-- Config: `~/Library/Application Support/cantalog/config.toml`
-- DB: `~/Library/Application Support/cantalog/db.sqlite`
+- Config: `~/Library/Application Support/happycampr-carousels/config.toml`
+- DB: `~/Library/Application Support/happycampr-carousels/db.sqlite`
 
 The app is fully local — no network calls beyond reading local files and running `git log` in configured repos.
 

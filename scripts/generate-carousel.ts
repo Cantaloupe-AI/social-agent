@@ -28,43 +28,72 @@ import { ORIENTATION_DIMS, renderSlide, type Orientation } from "./render-slide.
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const DATA_DIR = join(homedir(), "Library", "Application Support", "cantalog");
+const DATA_DIR = join(homedir(), "Library", "Application Support", "happycampr-carousels");
 const DB_PATH = join(DATA_DIR, "db.sqlite");
 
 const IMPL_PROMPT_PATH = join(REPO_ROOT, "prompts", "implementation_agent.md");
 const MGR_PROMPT_PATH = join(REPO_ROOT, "prompts", "manager_agent.md");
 
 /**
- * Source path of the brand logo + the per-slide filename the agent
- * embeds. We copy the asset into each slide's working dir at run start
- * so the generated HTML can reference it by simple relative path
+ * Brand logo lockups + the per-slide filenames the agent embeds. Both
+ * variants are copied into each slide's working dir at run start so the
+ * generated HTML can reference one by a simple relative path
  * (`<img src="happycampr-logo.svg">`). Keeps the slide folder
  * self-contained — puppeteer's `file://` resolver picks it up without
  * any absolute paths leaking into the HTML.
  *
- * Until theming lands, this is the only brand identity. See
- * `design/carousel.manifest.json#branding.themingFutureWork` for the
- * future-state plan.
+ * Two variants ship because the wordmark must stay legible on whatever
+ * surface the slide header sits on. The agent picks per slide background:
+ *   - `happycampr-logo.svg`         — burnt lockup, for the default
+ *                                     marshmallow (light) surface.
+ *   - `happycampr-logo-inverse.svg` — marshmallow lockup, for the
+ *                                     burnt (dark) surface-inverse slide
+ *                                     (e.g. takeaway).
+ * The selection rule lives in design-tokens.json#branding,
+ * happycampr.design-contracts.json#branding.headerLogo, and the agent
+ * prompts. See carousel.manifest.json#branding.themingFutureWork for the
+ * future multi-brand plan.
  */
-const HEADER_LOGO_SRC_PATH = join(
-  REPO_ROOT,
-  "design",
-  "assets",
-  "happycampr-logo-full.svg",
-);
-const HEADER_LOGO_FILENAME = "happycampr-logo.svg";
+const HEADER_LOGOS = [
+  {
+    src: join(REPO_ROOT, "design", "assets", "happycampr-logo-full.svg"),
+    filename: "happycampr-logo.svg",
+  },
+  {
+    src: join(
+      REPO_ROOT,
+      "design",
+      "assets",
+      "happycampr-logo-full-marshmallow.svg",
+    ),
+    filename: "happycampr-logo-inverse.svg",
+  },
+];
 
 /**
- * Design files inlined into every agent's system prompt at run start.
- * Order matters only for human-readability of the resulting block; the
- * SDK doesn't care.
+ * Design files inlined into an agent's system prompt at run start. The
+ * spec is re-billed (cache_read, or full input on a >5min cache-TTL bust)
+ * on EVERY turn, so it's the dominant token cost under rate limiting —
+ * keep each agent's set to only what that role needs.
+ *
+ * The implementation agent AUTHORS, so it gets the full spec including the
+ * worked example. The manager only REVIEWS against the rules, so it gets
+ * the numeric authority (contracts + numeric manifest + tokens) and skips
+ * the 27K-char human manifest prose and the 9K authoring example — ~40%
+ * less system prompt on the agent that does the most turns. Keep the
+ * manager_agent.md "Reference material" list in sync with MANAGER set.
  */
-const DESIGN_SPEC_FILES = [
+const IMPL_SPEC_FILES = [
   "design/design-tokens.json",
   "design/carousel-manifest.md",
   "design/carousel.manifest.json",
-  "design/cantaloupe.design-contracts.json",
+  "design/happycampr.design-contracts.json",
   "design/carousel_example.md",
+];
+const MANAGER_SPEC_FILES = [
+  "design/design-tokens.json",
+  "design/carousel.manifest.json",
+  "design/happycampr.design-contracts.json",
 ];
 
 /**
@@ -89,6 +118,20 @@ const MAX_ITERS = 4;
  * next thinking block; 4 min gives ~2× headroom.
  */
 const SDK_IDLE_TIMEOUT_MS = 240_000;
+
+/**
+ * Idle window used while the stream is in the *throttled* regime — see the
+ * `throttled` flag in `driveAgent`. A `rate_limit_event` enters that regime;
+ * the SDK then emits sparse internal retry `system` messages every 1–4 min
+ * (no forward progress) until the 429 clears. Observed on kitchen-sink
+ * run-6 slide 1: 19 such messages over ~33 min, then a >240 s gap that
+ * killed a still-alive slide because each retry `system` re-armed the
+ * short guard. Keying the long window off the throttled *state* (not just
+ * the rate_limit_event message) lets those retries ride out; the state
+ * clears on the first real forward-progress message, restoring the tight
+ * dead-air guard. 15 min still backstops a genuinely dead throttled stream.
+ */
+const SDK_RATE_LIMIT_IDLE_TIMEOUT_MS = 900_000;
 
 // ─── DB helpers ─────────────────────────────────────────────────────────────
 
@@ -317,9 +360,9 @@ function insertSlideFeedback(
  * on the first agent call per run; every subsequent call reads it from
  * cache at ~10% the price.
  */
-async function loadDesignSpec(): Promise<string> {
+async function loadDesignSpec(files: string[]): Promise<string> {
   const sections = await Promise.all(
-    DESIGN_SPEC_FILES.map(async (rel) => {
+    files.map(async (rel) => {
       const text = await readFile(join(REPO_ROOT, rel), "utf8");
       return `## ${rel}\n\n${text}`;
     }),
@@ -350,6 +393,13 @@ async function driveAgent(opts: {
   label: string;
   /** Model id passed through to the SDK. Caller resolves NULL → DEFAULT_MODEL. */
   model: string;
+  /**
+   * Hard cap on agent turns. A safety rail against runaway sessions: every
+   * extra turn re-bills the embedded design spec, so an agent that spirals
+   * (re-reading files, looping) burns tokens-per-minute fast. Set generously
+   * so normal work is never truncated; it only catches pathological runs.
+   */
+  maxTurns: number;
 }): Promise<void> {
   const abortController = new AbortController();
   const q = query({
@@ -360,6 +410,7 @@ async function driveAgent(opts: {
       systemPrompt: opts.systemPrompt,
       permissionMode: "auto",
       allowedTools: opts.allowedTools,
+      maxTurns: opts.maxTurns,
       abortController,
     },
   });
@@ -382,15 +433,15 @@ async function driveAgent(opts: {
   // stream has gone silent — abort the query and surface a clear error.
   let watchdogTripped = false;
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  const armWatchdog = () => {
+  const armWatchdog = (ms: number) => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       watchdogTripped = true;
       process.stderr.write(
-        `  [sdk:${opts.label}] idle watchdog: no message in ${SDK_IDLE_TIMEOUT_MS}ms — aborting\n`,
+        `  [sdk:${opts.label}] idle watchdog: no message in ${ms}ms — aborting\n`,
       );
       abortController.abort();
-    }, SDK_IDLE_TIMEOUT_MS);
+    }, ms);
   };
   const disarmWatchdog = () => {
     if (idleTimer) {
@@ -403,17 +454,40 @@ async function driveAgent(opts: {
   // silent. Per CLAUDE.md §conventions/errors: no silent failures.
   // We don't dump full content (that would flood the log on long thinking
   // turns); just type + a short discriminator so we can see progress.
+  // Throttled regime: a `rate_limit_event` means the SDK is now backing
+  // off a 429 and will emit only sparse internal retry `system` messages
+  // (no forward progress) until it clears. While throttled we arm the
+  // long window on *every* message so those retries don't re-arm the tight
+  // guard and kill a still-alive slide (run-6 slide 1: 19 retry `system`s
+  // over ~33 min, then a >240 s gap tripped the short timer). The first
+  // real forward-progress message (assistant/user/result) means the 429
+  // cleared — drop back to the tight dead-air guard. `system` messages
+  // leave the regime unchanged (init burst at start is harmless: not yet
+  // throttled, and it arrives sub-second).
+  let throttled = false;
   try {
-    armWatchdog();
+    armWatchdog(SDK_IDLE_TIMEOUT_MS);
     for await (const msg of q) {
-      armWatchdog();
       messageCount++;
+      const msgType = (msg as { type?: string }).type;
       process.stderr.write(
         `  [sdk:${opts.label}] #${messageCount} ${describeSdkMessage(msg)}\n`,
       );
-      if ((msg as { type?: string }).type === "result") {
+      if (msgType === "result") {
         resultMessage = msg as typeof resultMessage;
       }
+      if (msgType === "rate_limit_event") {
+        throttled = true;
+      } else if (
+        msgType === "assistant" ||
+        msgType === "user" ||
+        msgType === "result"
+      ) {
+        throttled = false;
+      }
+      armWatchdog(
+        throttled ? SDK_RATE_LIMIT_IDLE_TIMEOUT_MS : SDK_IDLE_TIMEOUT_MS,
+      );
     }
   } catch (err) {
     if (watchdogTripped) {
@@ -523,6 +597,9 @@ async function runImplementer(opts: {
     allowedTools: ["Read", "Write", "Edit"],
     label: "Implementation agent",
     model: opts.model,
+    // Authoring: read inputs, write/iterate HTML. Normal runs are well
+    // under this; the cap only stops a spiral.
+    maxTurns: 28,
   });
 }
 
@@ -530,6 +607,54 @@ interface ManagerVerdict {
   accepted: boolean;
   feedback: string;
 }
+
+/**
+ * Parse the manager's review.json. Tolerant only of *wrapping* the model
+ * sometimes adds around otherwise-valid JSON (UTF-8 BOM, ```json fences,
+ * stray prose) — it narrows to the outer `{ … }` and parses that. It does
+ * NOT guess at malformed content: if the JSON itself is invalid (e.g.
+ * unescaped `"` inside `feedback`, which Sonnet has produced), it returns
+ * an error so the caller can retrigger the write rather than act on a
+ * mangled or hallucinated verdict.
+ */
+function parseVerdict(
+  raw: string,
+): { ok: true; verdict: ManagerVerdict } | { ok: false; error: string } {
+  let t = raw.replace(/^﻿/, "").trim();
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) t = fence[1].trim();
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(t);
+  } catch (e) {
+    return { ok: false, error: `invalid JSON: ${(e as Error).message}` };
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    typeof (parsed as { accepted?: unknown }).accepted !== "boolean" ||
+    typeof (parsed as { feedback?: unknown }).feedback !== "string"
+  ) {
+    return {
+      ok: false,
+      error: 'missing required fields { accepted: bool, feedback: string }',
+    };
+  }
+  return { ok: true, verdict: parsed as ManagerVerdict };
+}
+
+/**
+ * Max times we re-ask the manager to (re)write review.json within a single
+ * review. A malformed or missing verdict retriggers the write with a
+ * corrective hint — it does NOT fail the slide on the first bad file. Only
+ * after this many genuinely unusable attempts do we surface an error to
+ * the per-slide loop.
+ */
+const MANAGER_REVIEW_ATTEMPTS = 3;
 
 async function runManager(opts: {
   slideDir: string;
@@ -539,44 +664,73 @@ async function runManager(opts: {
   model: string;
 }): Promise<ManagerVerdict> {
   const reviewPath = join(opts.slideDir, "review.json");
-  await rm(reviewPath, { force: true });
+  let lastError = "";
 
-  const prompt = [
-    `Working directory: ${opts.slideDir}`,
-    `Review ${opts.versionFilename} (rendered to ${opts.screenshotFilename}).`,
-    `Write your verdict to review.json with shape { "accepted": bool, "feedback": string }.`,
-  ].join("\n\n");
+  for (let attempt = 1; attempt <= MANAGER_REVIEW_ATTEMPTS; attempt++) {
+    await rm(reviewPath, { force: true });
 
-  await driveAgent({
-    cwd: opts.slideDir,
-    systemPrompt: opts.systemPrompt,
-    prompt,
-    allowedTools: ["Read", "Write"],
-    label: "Manager agent",
-    model: opts.model,
-  });
+    const promptParts = [
+      `Working directory: ${opts.slideDir}`,
+      `Review ${opts.versionFilename} (rendered to ${opts.screenshotFilename}).`,
+      `Write your verdict to review.json with shape { "accepted": bool, "feedback": string }.`,
+    ];
+    if (attempt > 1) {
+      promptParts.push(
+        `RETRY (${attempt}/${MANAGER_REVIEW_ATTEMPTS}): your previous review.json was unusable — ${lastError}. ` +
+          `Write review.json again as a SINGLE valid JSON object and nothing else: ` +
+          `no markdown code fences, no prose before or after. Inside the "feedback" ` +
+          `string, every double-quote must be escaped as \\" and every newline as \\n ` +
+          `(do not paste raw quotes from the spec or the screenshot). Keep feedback concise.`,
+      );
+    }
 
-  if (!existsSync(reviewPath)) {
-    throw new Error("Manager agent did not write review.json");
-  }
-  const text = await readFile(reviewPath, "utf8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Manager agent wrote invalid JSON: ${(e as Error).message}`);
-  }
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as { accepted?: unknown }).accepted !== "boolean" ||
-    typeof (parsed as { feedback?: unknown }).feedback !== "string"
-  ) {
-    throw new Error(
-      `Manager agent review.json missing required fields { accepted: bool, feedback: string }`,
+    try {
+      await driveAgent({
+        cwd: opts.slideDir,
+        systemPrompt: opts.systemPrompt,
+        prompt: promptParts.join("\n\n"),
+        allowedTools: ["Read", "Write"],
+        label: "Manager agent",
+        model: opts.model,
+        // Review: read source/html/png, write review.json. A normal review
+        // is a handful of turns; this only stops a spiral.
+        maxTurns: 18,
+      });
+    } catch (e) {
+      // The SDK stream stalled / was aborted by the idle watchdog, or some
+      // other transient agent failure. Per the watchdog's own contract
+      // ("the iter-retry loop can decide whether to retry or fail") this
+      // retriggers the whole review instead of failing the slide and
+      // moving on — same policy as a malformed verdict below.
+      lastError = `manager stream failed (${(e as Error).message})`;
+      process.stderr.write(
+        `  [manager] attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}: ${lastError} — retriggering\n`,
+      );
+      continue;
+    }
+
+    if (!existsSync(reviewPath)) {
+      lastError = "no review.json was written";
+    } else {
+      const result = parseVerdict(await readFile(reviewPath, "utf8"));
+      if (result.ok) {
+        if (attempt > 1) {
+          process.stderr.write(
+            `  [manager] valid review.json on attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}\n`,
+          );
+        }
+        return result.verdict;
+      }
+      lastError = result.error;
+    }
+    process.stderr.write(
+      `  [manager] attempt ${attempt}/${MANAGER_REVIEW_ATTEMPTS}: ${lastError} — retriggering write\n`,
     );
   }
-  return parsed as ManagerVerdict;
+
+  throw new Error(
+    `Manager agent failed to produce valid review.json after ${MANAGER_REVIEW_ATTEMPTS} attempts: ${lastError}`,
+  );
 }
 
 // ─── Per-slide pipeline (Phase 3: impl + render, no manager) ───────────────
@@ -591,6 +745,7 @@ async function generateSlide(opts: {
   implModel: string;
   managerModel: string;
   orientation: Orientation;
+  force: boolean;
   log: (line: string) => void;
 }) {
   const {
@@ -603,6 +758,7 @@ async function generateSlide(opts: {
     implModel,
     managerModel,
     orientation,
+    force,
     log,
   } = opts;
   const slideFolderName = `${String(slideIndex).padStart(2, "0")}-${slide.id}`;
@@ -612,20 +768,30 @@ async function generateSlide(opts: {
   // Freeze the source markdown at run start.
   await writeFile(join(slideDir, "source.md"), slide.content, "utf8");
 
-  // Copy the brand logo into the slide dir so the agent's HTML can
-  // reference it with `<img src="happycampr-logo.svg">` and puppeteer
-  // resolves it relative to the file:// URL of the rendered HTML.
-  // copyFile (rather than symlink) is intentional: the slide dir is
-  // committed to disk as the run's artifact, and a symlink that points
-  // back into the repo would break if the repo moves.
-  await copyFile(HEADER_LOGO_SRC_PATH, join(slideDir, HEADER_LOGO_FILENAME));
+  // Copy both brand logo variants into the slide dir so the agent's HTML
+  // can reference one with `<img src="happycampr-logo.svg">` (or the
+  // inverse) and puppeteer resolves it relative to the file:// URL of the
+  // rendered HTML. copyFile (rather than symlink) is intentional: the
+  // slide dir is committed to disk as the run's artifact, and a symlink
+  // that points back into the repo would break if the repo moves.
+  for (const logo of HEADER_LOGOS) {
+    await copyFile(logo.src, join(slideDir, logo.filename));
+  }
 
   // Skip the agent loop if we have a previously-accepted version whose
   // markdown matches the current slide content. The PDF concat step picks
   // up the prior run's pdf via slide_versions.pdf_path (latest version
   // wins), so we don't need to insert a new version row — the existing
   // accepted one IS the current one.
-  const accepted = findLatestAcceptedVersion(db, slide.id);
+  //
+  // `force` (HAPPYCAMPR_FORCE=1 / `generate --force`) disables this. The
+  // skip is keyed on slide markdown only; it cannot see that the design
+  // spec, agent prompts, or brand assets changed. After any spec/asset
+  // edit, force a re-render so accepted slides pick up the new rules.
+  const accepted = force ? null : findLatestAcceptedVersion(db, slide.id);
+  if (force) {
+    log("  ⟳ force: re-rendering even though markdown is unchanged");
+  }
   if (accepted) {
     const priorSourcePath = join(dirname(accepted.html_path), "source.md");
     const priorPdfMissing =
@@ -764,10 +930,15 @@ async function main() {
   const orientation = resolveOrientation(carousel.orientation);
   const dims = ORIENTATION_DIMS[orientation];
 
+  // Force re-render of every slide, bypassing the markdown-unchanged skip.
+  // Set when the spec/prompts/assets changed and accepted slides are stale.
+  const force = process.env.HAPPYCAMPR_FORCE === "1";
+
   log(`Starting run for carousel "${carousel.label}" (${slides.length} slide(s)).`);
   log(`Run dir: ${runDir}`);
   log(`Models: impl=${implModel}, manager=${managerModel}`);
   log(`Orientation: ${orientation} (${dims.widthPx} × ${dims.heightPx})`);
+  if (force) log("Force mode: re-rendering all slides (skip disabled)");
 
   // Read the design spec ONCE up front and embed it into both agents'
   // system prompts. This avoids the per-iteration Read-tool round trips
@@ -778,14 +949,24 @@ async function main() {
   // The ACTIVE ORIENTATION header sits *above* the design spec so the
   // agent reads it first and knows which `orientations.X` and
   // `canvas.X` branches to follow.
-  const designSpec = await loadDesignSpec();
-  log(`Embedded design spec: ${designSpec.length.toLocaleString()} chars`);
+  // Per-role specs: the implementer gets the full authoring spec; the
+  // manager gets the leaner review spec (numeric authority only). Smaller
+  // manager prompt = fewer tokens re-billed on every one of its turns,
+  // which is the dominant cost under rate limiting.
+  const [implSpec, managerSpec] = await Promise.all([
+    loadDesignSpec(IMPL_SPEC_FILES),
+    loadDesignSpec(MANAGER_SPEC_FILES),
+  ]);
+  log(
+    `Embedded design spec: impl ${implSpec.length.toLocaleString()} chars, ` +
+      `manager ${managerSpec.length.toLocaleString()} chars`,
+  );
   const orientationHeader = [
     "==========================================================",
     `ACTIVE ORIENTATION: ${orientation} (${dims.widthPx} × ${dims.heightPx})`,
     `Use the \`${orientation}\` branch of every per-orientation rule below`,
     `(orientations.${orientation} in carousel.manifest.json,`,
-    ` canvas.${orientation} in cantaloupe.design-contracts.json,`,
+    ` canvas.${orientation} in happycampr.design-contracts.json,`,
     ` layout.canvas.${orientation} in design-tokens.json,`,
     ` and the maxColumnPx.${orientation} variants for body / code).`,
     `Ignore the other branch.`,
@@ -794,8 +975,8 @@ async function main() {
   ].join("\n");
   const implRolePrompt = await Bun.file(IMPL_PROMPT_PATH).text();
   const managerRolePrompt = await Bun.file(MGR_PROMPT_PATH).text();
-  const implPrompt = `${implRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
-  const managerPrompt = `${managerRolePrompt}\n\n${orientationHeader}\n${designSpec}`;
+  const implPrompt = `${implRolePrompt}\n\n${orientationHeader}\n${implSpec}`;
+  const managerPrompt = `${managerRolePrompt}\n\n${orientationHeader}\n${managerSpec}`;
 
   let allOk = true;
   for (let i = 0; i < slides.length; i++) {
@@ -812,6 +993,7 @@ async function main() {
         implModel,
         managerModel,
         orientation,
+        force,
         log,
       });
       log(`✓ slide ${i + 1} done`);

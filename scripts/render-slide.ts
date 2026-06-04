@@ -25,13 +25,13 @@ const CHROME_CANDIDATES = [
 ];
 
 function resolveChromePath(): string {
-  const fromEnv = process.env.CANTALOG_CHROME_PATH;
+  const fromEnv = process.env.HAPPYCAMPR_CHROME_PATH;
   if (fromEnv && existsSync(fromEnv)) return fromEnv;
   for (const candidate of CHROME_CANDIDATES) {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error(
-    "No Chrome/Chromium found. Install Google Chrome, or set CANTALOG_CHROME_PATH.",
+    "No Chrome/Chromium found. Install Google Chrome, or set HAPPYCAMPR_CHROME_PATH.",
   );
 }
 

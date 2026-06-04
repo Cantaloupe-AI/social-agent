@@ -251,7 +251,7 @@ export function CarouselEditor({
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        console.error("cantalog: getCarousel failed", e);
+        console.error("happycampr: getCarousel failed", e);
         setGenError(`Could not load carousel status: ${String(e)}`);
       });
     return () => {
@@ -273,7 +273,7 @@ export function CarouselEditor({
     try {
       await onUpdateModels(next, managerModel);
     } catch (e: unknown) {
-      console.error("cantalog: changeImplModel failed", e);
+      console.error("happycampr: changeImplModel failed", e);
       setImplModel(prev);
       setGenError(`Could not update impl model: ${String(e)}`);
     }
@@ -285,7 +285,7 @@ export function CarouselEditor({
     try {
       await onUpdateModels(implModel, next);
     } catch (e: unknown) {
-      console.error("cantalog: changeManagerModel failed", e);
+      console.error("happycampr: changeManagerModel failed", e);
       setManagerModel(prev);
       setGenError(`Could not update manager model: ${String(e)}`);
     }
@@ -298,7 +298,7 @@ export function CarouselEditor({
     try {
       await onUpdateOrientation(next);
     } catch (e: unknown) {
-      console.error("cantalog: changeOrientation failed", e);
+      console.error("happycampr: changeOrientation failed", e);
       setOrientation(prev);
       setGenError(`Could not update orientation: ${String(e)}`);
     }
@@ -325,7 +325,7 @@ export function CarouselEditor({
         setGenError("Generation started, but carousel disappeared from db.");
       }
     } catch (e: unknown) {
-      console.error("cantalog: startGeneration failed", e);
+      console.error("happycampr: startGeneration failed", e);
       setGenError(String(e));
     }
   }
@@ -607,7 +607,7 @@ function SlideEditor({
           setSaveStatus((s) => (s === "saved" ? "idle" : s));
         }, 1000);
       } catch (e: unknown) {
-        console.error("cantalog: slide save failed", e);
+        console.error("happycampr: slide save failed", e);
         setSaveStatus("idle");
       }
     }, SAVE_DEBOUNCE_MS);
@@ -643,7 +643,7 @@ function SlideEditor({
                   }, 1000);
                 })
                 .catch((e: unknown) => {
-                  console.error("cantalog: slide save failed (blur)", e);
+                  console.error("happycampr: slide save failed (blur)", e);
                   setSaveStatus("idle");
                 });
             }
@@ -696,7 +696,7 @@ function SlideRenderPreview({
         // Reading a missing or unreadable PNG shouldn't kill the editor,
         // but the user needs to see why no preview is showing.
         console.warn(
-          "cantalog: readSlideScreenshotDataUrl failed",
+          "happycampr: readSlideScreenshotDataUrl failed",
           { slideId },
           e,
         );
@@ -876,7 +876,7 @@ function SlideTitleEditor({
     try {
       await onSubmit(value);
     } catch (e: unknown) {
-      console.error("cantalog: SlideTitleEditor submit failed", e);
+      console.error("happycampr: SlideTitleEditor submit failed", e);
       onCancel();
     }
   }

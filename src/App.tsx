@@ -21,7 +21,7 @@ export default function App() {
     loadConfig()
       .then(setConfig)
       .catch((e: unknown) => {
-        console.error("cantalog: loadConfig failed", e);
+        console.error("happycampr: loadConfig failed", e);
       });
   }, []);
 

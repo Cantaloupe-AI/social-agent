@@ -89,11 +89,11 @@ export function ConfigDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Cantalog settings</DialogTitle>
+          <DialogTitle>Happycampr Carousels settings</DialogTitle>
           <DialogDescription>
             Local-only. Changes are written to{" "}
             <span className="font-mono text-xs">
-              ~/Library/Application Support/cantalog/config.toml
+              ~/Library/Application Support/happycampr-carousels/config.toml
             </span>
             .
           </DialogDescription>
@@ -110,7 +110,7 @@ export function ConfigDialog({
               re-created with defaults on next launch. If you see this again,
               inspect{" "}
               <span className="font-mono">
-                ~/Library/Application Support/cantalog/config.toml
+                ~/Library/Application Support/happycampr-carousels/config.toml
               </span>
               .
             </p>

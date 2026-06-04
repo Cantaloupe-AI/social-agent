@@ -119,7 +119,7 @@ export function useCarousels(): UseCarouselsResult {
       setError(null);
       return c;
     } catch (e: unknown) {
-      console.error("cantalog: duplicateCarousel failed", e);
+      console.error("happycampr: duplicateCarousel failed", e);
       setError(String(e));
       throw e;
     }
@@ -152,7 +152,7 @@ export function useCarousels(): UseCarouselsResult {
         await updateCarouselModelsCmd(id, implNorm, managerNorm);
         setError(null);
       } catch (e: unknown) {
-        console.error("cantalog: updateCarouselModels failed", e);
+        console.error("happycampr: updateCarouselModels failed", e);
         setError(String(e));
         // Revert by re-fetching authoritative state.
         try {
@@ -160,7 +160,7 @@ export function useCarousels(): UseCarouselsResult {
           setCarousels(xs);
         } catch (refreshErr) {
           console.error(
-            "cantalog: refetch after failed updateModels also failed",
+            "happycampr: refetch after failed updateModels also failed",
             refreshErr,
           );
         }
@@ -190,7 +190,7 @@ export function useCarousels(): UseCarouselsResult {
         await updateCarouselOrientationCmd(id, orientation);
         setError(null);
       } catch (e: unknown) {
-        console.error("cantalog: updateCarouselOrientation failed", e);
+        console.error("happycampr: updateCarouselOrientation failed", e);
         setError(String(e));
         if (prev !== undefined) {
           setCarousels((cs) =>
@@ -204,7 +204,7 @@ export function useCarousels(): UseCarouselsResult {
             setCarousels(xs);
           } catch (refreshErr) {
             console.error(
-              "cantalog: refetch after failed updateOrientation also failed",
+              "happycampr: refetch after failed updateOrientation also failed",
               refreshErr,
             );
           }

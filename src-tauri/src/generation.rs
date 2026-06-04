@@ -2,7 +2,7 @@
 //!
 //! Everything `commands::generate_carousel_pdf` does *except* parking the
 //! child in the in-memory `GenerationProcesses` map (a UI-cancel concern)
-//! lives here, so the Tauri command and the `cantalog-cli` binary drive a
+//! lives here, so the Tauri command and the `happycampr-carousels-cli` binary drive a
 //! generation through one code path. Per CLAUDE.md §conventions/errors:
 //! run-dir naming and the crash-finalize safety net exist in exactly one
 //! place — `next_run_dir` and `finalize` below.
@@ -25,7 +25,7 @@ fn open_db(base_dir: &Path) -> Result<rusqlite::Connection, String> {
 /// Resolve the repo root (parent of the `src-tauri` Cargo manifest dir).
 ///
 /// `CARGO_MANIFEST_DIR` is `/…/social-agent/src-tauri` at build time for
-/// every binary in this crate (the Tauri app and `cantalog-cli` alike).
+/// every binary in this crate (the Tauri app and `happycampr-carousels-cli` alike).
 pub fn repo_root() -> Result<PathBuf, String> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -37,6 +37,41 @@ pub fn repo_root() -> Result<PathBuf, String> {
 /// Path to the bun driver script, given a repo root.
 pub fn driver_script(root: &Path) -> PathBuf {
     root.join("scripts").join("generate-carousel.ts")
+}
+
+/// Resolve the `bun` executable to an absolute path when possible.
+///
+/// macOS GUI-launched apps (Finder/Dock/`open`) inherit a minimal PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) that excludes `~/.bun/bin`, so a bare
+/// `Command::new("bun")` fails at spawn with ENOENT. Observed: carousel
+/// runs 1–4 died ~3 ms in with `spawn failed: No such file or directory
+/// (os error 2)`, while the same carousel succeeded to spawn from
+/// `happycampr-carousels-cli` (a shell child that *does* inherit `~/.bun/bin`).
+///
+/// Strategy, in order: an explicit `HAPPYCAMPR_BUN` override, the known
+/// install locations, then a bare `"bun"` fallback so terminal/CLI
+/// launches keep working via the inherited PATH. `spawn_driver` also
+/// prepends the resolved dir to the child's PATH so `bun` finds anything
+/// it shells out to even under the stripped GUI environment.
+fn resolve_bun() -> PathBuf {
+    if let Some(p) = std::env::var_os("HAPPYCAMPR_BUN") {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return p;
+        }
+    }
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(home) = std::env::var_os("HOME") {
+        candidates.push(PathBuf::from(&home).join(".bun/bin/bun"));
+    }
+    candidates.push(PathBuf::from("/opt/homebrew/bin/bun"));
+    candidates.push(PathBuf::from("/usr/local/bin/bun"));
+    candidates
+        .into_iter()
+        .find(|c| c.is_file())
+        // Last resort: bare name. Resolves via the inherited PATH, which
+        // works for the `happycampr-carousels-cli` (shell child) launch path.
+        .unwrap_or_else(|| PathBuf::from("bun"))
 }
 
 /// Pick the next `run-N` directory under `<base_dir>/carousels/<slug>/`.
@@ -92,7 +127,7 @@ pub fn spawn_pipe_tee(
             let line = match line_res {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("cantalog: pipe-tee[{label}] read error: {e}");
+                    eprintln!("happycampr: pipe-tee[{label}] read error: {e}");
                     return;
                 }
             };
@@ -109,14 +144,14 @@ pub fn spawn_pipe_tee(
                 Ok(mut f) => {
                     if let Err(e) = f.write_all(stamped.as_bytes()) {
                         eprintln!(
-                            "cantalog: pipe-tee[{label}] log write failed ({}): {e}",
+                            "happycampr: pipe-tee[{label}] log write failed ({}): {e}",
                             log_path.display()
                         );
                     }
                 }
                 Err(e) => {
                     eprintln!(
-                        "cantalog: pipe-tee[{label}] log open failed ({}): {e}",
+                        "happycampr: pipe-tee[{label}] log open failed ({}): {e}",
                         log_path.display()
                     );
                 }
@@ -134,14 +169,14 @@ pub fn append_log_line(log_path: &Path, line: &str) {
         Ok(mut f) => {
             if let Err(e) = f.write_all(stamped.as_bytes()) {
                 eprintln!(
-                    "cantalog: append_log_line failed ({}): {e}",
+                    "happycampr: append_log_line failed ({}): {e}",
                     log_path.display()
                 );
             }
         }
         Err(e) => {
             eprintln!(
-                "cantalog: append_log_line open failed ({}): {e}",
+                "happycampr: append_log_line open failed ({}): {e}",
                 log_path.display()
             );
         }
@@ -274,24 +309,37 @@ pub fn spawn_driver(
         mark_run_failed(base_dir, carousel_id, log_path, &why);
         return Err(why);
     }
-    let mut child = Command::new("bun")
-        .arg("run")
+    let bun = resolve_bun();
+    let mut cmd = Command::new(&bun);
+    cmd.arg("run")
         .arg(&script)
         .arg(carousel_id)
         .arg(run_dir)
         .current_dir(root)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            mark_run_failed(
-                base_dir,
-                carousel_id,
-                log_path,
-                &format!("spawn failed: {e}"),
-            );
-            format!("spawning bun driver: {e}")
-        })?;
+        .stderr(Stdio::piped());
+    // Prepend the resolved bun dir to the child's PATH so the GUI launch's
+    // stripped PATH (`/usr/bin:/bin:…`) doesn't break anything bun itself
+    // shells out to. Skipped when `resolve_bun` fell back to the bare name
+    // (parent is empty) — there the inherited PATH is already correct.
+    if let Some(bun_dir) = bun.parent().filter(|d| !d.as_os_str().is_empty()) {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut joined = std::ffi::OsString::from(bun_dir);
+        if !existing.is_empty() {
+            joined.push(":");
+            joined.push(&existing);
+        }
+        cmd.env("PATH", joined);
+    }
+    let mut child = cmd.spawn().map_err(|e| {
+        mark_run_failed(
+            base_dir,
+            carousel_id,
+            log_path,
+            &format!("spawn failed: {e}"),
+        );
+        format!("spawning bun driver: {e}")
+    })?;
 
     if let Some(stdout) = child.stdout.take() {
         spawn_pipe_tee("bun-stdout", stdout, log_path.to_path_buf());
@@ -405,7 +453,7 @@ mod tests {
     fn fresh_base_dir(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let dir = std::env::temp_dir().join(format!(
-            "cantalog-test-gen-{}-{}-{}",
+            "happycampr-carousels-test-gen-{}-{}-{}",
             tag,
             std::process::id(),
             n

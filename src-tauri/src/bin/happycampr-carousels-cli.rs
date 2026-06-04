@@ -1,12 +1,12 @@
-//! `cantalog-cli` — a scriptable surface over the same backend the Tauri
+//! `happycampr-carousels-cli` — a scriptable surface over the same backend the Tauri
 //! app uses. Thin `clap` parser: all behaviour lives in
-//! `cantalog_lib::cli`, which is unit-tested. This file only parses args,
+//! `happycampr_carousels_lib::cli`, which is unit-tested. This file only parses args,
 //! formats the returned values, and sets the process exit code.
 
-use cantalog_lib::cli::{
+use happycampr_carousels_lib::cli::{
     self, ContentSource, ImportTarget,
 };
-use cantalog_lib::config;
+use happycampr_carousels_lib::config;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::thread;
@@ -14,10 +14,10 @@ use std::time::Duration;
 
 #[derive(Parser)]
 #[command(
-    name = "cantalog-cli",
-    about = "Create, populate, generate, and inspect Cantaloupe carousels",
+    name = "happycampr-carousels-cli",
+    about = "Create, populate, generate, and inspect happycampr carousels",
     long_about = "Scriptable access to the same SQLite/bun pipeline the \
-                  Cantalog app drives. Useful for testing the core loop and \
+                  Happycampr Carousels app drives. Useful for testing the core loop and \
                   for other agents."
 )]
 struct Cli {
@@ -95,6 +95,23 @@ enum CarouselAction {
     },
     /// List all carousels.
     List,
+    /// Set the per-carousel agent model overrides (bun driver).
+    SetModel(SetModelArgs),
+}
+
+#[derive(Args)]
+struct SetModelArgs {
+    /// Target carousel id.
+    carousel_id: String,
+    /// Set BOTH agents to this model id (shortcut for --impl + --manager).
+    #[arg(long)]
+    both: Option<String>,
+    /// Implementation-agent model id (e.g. claude-sonnet-4-6).
+    #[arg(long = "impl")]
+    impl_model: Option<String>,
+    /// Manager-agent model id.
+    #[arg(long = "manager")]
+    manager_model: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -147,6 +164,11 @@ struct GenerateArgs {
     /// Don't auto-open the PDF when the run succeeds.
     #[arg(long)]
     no_open: bool,
+    /// Re-render every slide, ignoring the markdown-unchanged skip. Use
+    /// after editing the design spec, agent prompts, or brand assets so
+    /// previously-accepted slides pick up the new rules.
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Args)]
@@ -167,7 +189,7 @@ struct OpenArgs {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("cantalog-cli: error: {e}");
+        eprintln!("happycampr-carousels-cli: error: {e}");
         std::process::exit(1);
     }
 }
@@ -189,6 +211,27 @@ fn run() -> Result<(), String> {
                     c.label,
                     c.slug.as_deref().unwrap_or("-"),
                     c.orientation.as_str()
+                );
+            }
+            CarouselAction::SetModel(a) => {
+                let (im, mm) = if let Some(b) = a.both.as_deref() {
+                    (Some(b), Some(b))
+                } else {
+                    (a.impl_model.as_deref(), a.manager_model.as_deref())
+                };
+                if im.is_none() && mm.is_none() {
+                    return Err(
+                        "provide --both <model>, or --impl <model> / --manager <model>"
+                            .into(),
+                    );
+                }
+                let conn = cli::open_db(&base_dir()?)?;
+                let c = cli::cmd_carousel_set_model(&conn, &a.carousel_id, im, mm)?;
+                println!(
+                    "carousel {} models updated\n  impl:    {}\n  manager: {}",
+                    c.id,
+                    c.impl_model.as_deref().unwrap_or("(driver default)"),
+                    c.manager_model.as_deref().unwrap_or("(driver default)")
                 );
             }
             CarouselAction::List => {
@@ -261,6 +304,12 @@ fn run() -> Result<(), String> {
         }
         Command::Generate(a) => {
             let bd = base_dir()?;
+            // Force re-render bypasses the driver's markdown-unchanged skip,
+            // which can't see that the design spec / prompts / brand assets
+            // changed. Propagated to the bun driver via the inherited env.
+            if a.force {
+                std::env::set_var("HAPPYCAMPR_FORCE", "1");
+            }
             let outcome = cli::cmd_generate(
                 &bd,
                 &a.carousel_id,
@@ -274,7 +323,7 @@ fn run() -> Result<(), String> {
                 outcome.run_dir.display(),
                 outcome.pdf_path.as_deref().unwrap_or("(none)")
             );
-            if outcome.final_status != cantalog_lib::types::CarouselStatus::Done {
+            if outcome.final_status != happycampr_carousels_lib::types::CarouselStatus::Done {
                 return Err(format!("run did not succeed (status: {status})"));
             }
         }
@@ -286,8 +335,8 @@ fn run() -> Result<(), String> {
                     print_status(&r);
                     let terminal = matches!(
                         r.carousel.status,
-                        cantalog_lib::types::CarouselStatus::Done
-                            | cantalog_lib::types::CarouselStatus::Failed
+                        happycampr_carousels_lib::types::CarouselStatus::Done
+                            | happycampr_carousels_lib::types::CarouselStatus::Failed
                     );
                     if terminal {
                         break;
@@ -336,7 +385,7 @@ fn run() -> Result<(), String> {
                     let conn = cli::open_db(&base_dir()?)?;
                     let r = cli::cmd_chart_kitchen_sink(&conn, t)?;
                     println!(
-                        "{} carousel {} (\"{}\") with {} chart slide(s)\n  next: cantalog-cli generate {}",
+                        "{} carousel {} (\"{}\") with {} chart slide(s)\n  next: happycampr-carousels-cli generate {}",
                         if r.created { "created" } else { "appended to" },
                         r.carousel_id,
                         r.carousel_label,

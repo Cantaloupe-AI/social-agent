@@ -1,0 +1,457 @@
+{
+  "$description": "Machine-readable mirror of carousel-manifest.md. Numeric values for renderers. Companion: happycampr.design-contracts.json (validation), design-tokens.json (DTCG source). Orientation-coupled blocks (canvas, grid.page, grid.contentArea, header positions, footer positions, columns) live under orientations.{vertical|landscape}. The driver injects an `ACTIVE ORIENTATION` header into each agent's prompt; the agent picks the matching block and ignores the other.",
+  "orientations": {
+    "vertical": {
+      "canvas": {
+        "width": 1080,
+        "height": 1350,
+        "ratio": "4:5",
+        "format": "pdf",
+        "unit": "px"
+      },
+      "grid": {
+        "page": {
+          "marginX": 96,
+          "marginTop": 80,
+          "marginBottom": 80
+        },
+        "contentArea": {
+          "xStart": 96,
+          "xEnd": 984,
+          "yStart": 96,
+          "yEnd": 1254,
+          "width": 888,
+          "height": 1158
+        }
+      },
+      "header": {
+        "logo": {
+          "$description": "Default header element (replaces the eyebrow tag). See top-level `branding.headerLogo` for asset path and styling rules.",
+          "top": 24,
+          "left": 96,
+          "heightPx": 24,
+          "widthPx": 118
+        },
+        "tag": {
+          "$description": "Legacy eyebrow tag slot. Reserved for cover-only override copy (`A Short Essay` etc.). For non-cover plates the logo replaces the tag entirely.",
+          "top": 34,
+          "left": 96
+        },
+        "folio": {
+          "top": 34,
+          "right": 96
+        },
+        "topRule": {
+          "y": 56,
+          "xStart": 96,
+          "xEnd": 984,
+          "weight": 1,
+          "color": "#2B1810"
+        }
+      },
+      "footer": {
+        "bottomRule": {
+          "y": 1294,
+          "xStart": 96,
+          "xEnd": 984,
+          "weight": 1,
+          "color": "#2B1810"
+        },
+        "colophon": {
+          "top": 1316,
+          "leftX": 96,
+          "rightX": 984
+        }
+      },
+      "columns": {
+        "$description": "Single-column content widths. The vertical canvas is too narrow for a two-column body — pick one of these widths and center, or hang a `narrow` column off the gutter.",
+        "body": 620,
+        "narrow": 520,
+        "title": 820,
+        "code": 720
+      }
+    },
+    "landscape": {
+      "canvas": {
+        "width": 1920,
+        "height": 1080,
+        "ratio": "16:9",
+        "format": "pdf",
+        "unit": "px"
+      },
+      "grid": {
+        "page": {
+          "marginX": 128,
+          "marginTop": 80,
+          "marginBottom": 80
+        },
+        "contentArea": {
+          "xStart": 128,
+          "xEnd": 1792,
+          "yStart": 96,
+          "yEnd": 984,
+          "width": 1664,
+          "height": 888
+        }
+      },
+      "header": {
+        "logo": {
+          "$description": "Default header element (replaces the eyebrow tag). See top-level `branding.headerLogo` for asset path and styling rules.",
+          "top": 24,
+          "left": 128,
+          "heightPx": 24,
+          "widthPx": 118
+        },
+        "tag": {
+          "$description": "Legacy eyebrow tag slot. Reserved for cover-only override copy. For non-cover plates the logo replaces the tag entirely.",
+          "top": 34,
+          "left": 128
+        },
+        "folio": {
+          "top": 34,
+          "right": 128
+        },
+        "topRule": {
+          "y": 56,
+          "xStart": 128,
+          "xEnd": 1792,
+          "weight": 1,
+          "color": "#2B1810"
+        }
+      },
+      "footer": {
+        "bottomRule": {
+          "y": 1024,
+          "xStart": 128,
+          "xEnd": 1792,
+          "weight": 1,
+          "color": "#2B1810"
+        },
+        "colophon": {
+          "top": 1046,
+          "leftX": 128,
+          "rightX": 1792
+        }
+      },
+      "columns": {
+        "$description": "Editorial two-column body for landscape. Title plates use the full hero band; body plates use bodyTwoCol; code stays single-column because code blocks should not split.",
+        "body": 720,
+        "narrow": 600,
+        "title": 1500,
+        "code": 1100,
+        "bodyTwoCol": {
+          "width": 720,
+          "gutter": 96,
+          "count": 2,
+          "$description": "Two body columns of 720 px with a 96 px gutter (1536 px total). Center inside the 1664 px content area so the outer breathing on each side is 64 px."
+        }
+      }
+    }
+  },
+  "pageCount": {
+    "min": 3,
+    "max": 10
+  },
+  "surface": {
+    "default": "#F5F1E8",
+    "inverse": "#2B1810"
+  },
+  "branding": {
+    "$description": "Until theming lands (see `themingFutureWork`), every carousel uses happycampr brand identity. The implementation agent must include the header logo on every slide.",
+    "themingFutureWork": "Carousels will eventually support themes — selectable brand identities (e.g. agency clients, alternate happycampr themes, neutral/blank). Theming is OUT OF SCOPE for v0.x. The current assumption is hardcoded: every slide uses the happycampr full lockup. When theming lands, this `branding` block becomes per-theme, with the carousel row gaining a `theme` column the renderer/agents read.",
+    "headerLogo": {
+      "$description": "happycampr full lockup (mark + 'happycampr' wordmark). Ships in two colourways so the wordmark is always legible on the header surface: a burnt lockup for light/marshmallow slides and a marshmallow lockup for dark/burnt surface-inverse slides (e.g. takeaway). Pick the variant that contrasts with the slide background. Drives the header's top-left slot on every slide. See design/ambiguous.md §13.5 and design-tokens.json#branding.",
+      "assetRelPath": "design/assets/happycampr-logo-full.svg",
+      "perSlideFilename": "happycampr-logo.svg",
+      "variantBySurface": {
+        "$description": "Both variants are copied into every slide dir; reference the one matching this slide's background. A logo that blends into its surface is a hard fail (see happycampr.design-contracts.json#branding.headerLogo.rejectIf).",
+        "marshmallow": { "assetRelPath": "design/assets/happycampr-logo-full.svg", "perSlideFilename": "happycampr-logo.svg", "note": "Burnt lockup — light/marshmallow surfaces (default slides)." },
+        "burnt": { "assetRelPath": "design/assets/happycampr-logo-full-marshmallow.svg", "perSlideFilename": "happycampr-logo-inverse.svg", "note": "Marshmallow lockup — dark/burnt surface-inverse slides (takeaway)." }
+      },
+      "embedAs": "<img src=\"happycampr-logo.svg\" alt=\"happycampr\" style=\"position: absolute; top: {top}px; left: {left}px; height: {heightPx}px; width: {widthPx}px;\" />  (use src=\"happycampr-logo-inverse.svg\" on burnt/surface-inverse slides)",
+      "perSlideCopyStrategy": "The driver copies BOTH variants into each slide's working directory at run start under their `perSlideFilename` names; the agent references the matching one by filename only. This keeps the HTML portable: the slide folder is fully self-contained and the renderer's `file://` resolution does the rest.",
+      "nativeAspect": "54:11",
+      "renderHeightPx": 24,
+      "renderWidthPx": 118,
+      "minClearancePx": {
+        "$description": "Header chrome is exempt from the 40 px shape-to-rule contract — same exemption the eyebrow tag has always had. Logo bottom must clear the topRule by at least this many px.",
+        "logoToTopRule": 8
+      }
+    }
+  },
+  "grid": {
+    "$description": "Scale-invariant grid tokens — baselineSnap and the space scale are the same in both orientations. Per-orientation page margins and content boxes live under orientations.X.grid.",
+    "baselineSnap": 8,
+    "space": {
+      "2": 8,
+      "4": 16,
+      "6": 24,
+      "8": 32,
+      "10": 40,
+      "12": 48,
+      "14": 56,
+      "20": 80,
+      "24": 96
+    }
+  },
+  "type": {
+    "eyebrow": {
+      "sizePx": 10,
+      "sizeRem": 0.625,
+      "lineHeight": 1.2,
+      "trackingEm": 0.38,
+      "weight": 600,
+      "family": "inter",
+      "transform": "uppercase",
+      "use": "tag, folio, colophon"
+    },
+    "caption": {
+      "sizePx": 14,
+      "sizeRem": 0.875,
+      "lineHeight": 1.5,
+      "trackingEm": 0,
+      "weight": 400,
+      "italic": true,
+      "family": "inter",
+      "use": "italic captions under body"
+    },
+    "body-sm": {
+      "sizePx": 18,
+      "sizeRem": 1.125,
+      "lineHeight": 1.55,
+      "trackingEm": 0,
+      "weight": 400,
+      "family": "inter",
+      "use": "inline code, dense list descriptions"
+    },
+    "body": {
+      "sizePx": 22,
+      "sizeRem": 1.375,
+      "lineHeight": 1.55,
+      "trackingEm": 0,
+      "weight": 400,
+      "family": "inter",
+      "use": "default running text"
+    },
+    "body-lg": {
+      "sizePx": 24,
+      "sizeRem": 1.5,
+      "lineHeight": 1.5,
+      "trackingEm": 0,
+      "weight": 400,
+      "family": "inter",
+      "use": "emphasized body"
+    },
+    "title-sm": {
+      "sizePx": 84,
+      "sizeRem": 5.25,
+      "lineHeight": 1.05,
+      "trackingEm": -0.035,
+      "weight": 700,
+      "family": "inter",
+      "use": "secondary titles when content dense"
+    },
+    "title": {
+      "sizePx": 104,
+      "sizeRem": 6.5,
+      "lineHeight": 1.05,
+      "trackingEm": -0.035,
+      "weight": 700,
+      "family": "inter",
+      "use": "default plate headline",
+      "charBudgetPerLine": [10, 12]
+    },
+    "display": {
+      "sizePx": 140,
+      "sizeRem": 8.75,
+      "lineHeight": 0.95,
+      "trackingEm": -0.055,
+      "weight": 700,
+      "family": "inter",
+      "use": "cover display only"
+    }
+  },
+  "color": {
+    "$note": "happycampr four-colour palette. warning→graham (no amber), complement→burnt/ink (no mulberry), code-string→moss. Only graham+moss are chromatic. See design/ambiguous.md §13.1.",
+    "surface": "#F5F1E8",
+    "surface-inverse": "#2B1810",
+    "ink": "#2B1810",
+    "ink-dim": "#7C6F66",
+    "primary": "#946334",
+    "secondary": "#5A6B4C",
+    "warning": "#946334",
+    "warning-text": "#946334",
+    "complement": "#2B1810",
+    "code-string": "#5A6B4C"
+  },
+  "shapes": {
+    "$description": "Decorative-shape primitives. Default positions below are tuned for the vertical canvas; in landscape the agent must adapt positions to keep the safe-zones (40 px from rules, 32 px from text) while preserving the same compositional intent (e.g. circle-right still bleeds off the right edge, just at a different y).",
+    "circle-center": {
+      "shape": "circle",
+      "fill": "primary",
+      "defaultPosition": { "xAnchor": "center", "y": 400 },
+      "defaultSize": { "diameter": 360 },
+      "safeZone": "Must clear 40 px from top rule",
+      "usage": "cover"
+    },
+    "circle-right": {
+      "shape": "circle",
+      "fill": "secondary",
+      "defaultPosition": { "yAnchor": "50%", "right": -280 },
+      "defaultSize": { "diameter": 620 },
+      "safeZone": "Bleed is intentional; must clear top rule by 40 px",
+      "usage": "plate"
+    },
+    "bar-left": {
+      "shape": "rect",
+      "fill": "warning",
+      "defaultPosition": { "top": 200, "left": 0 },
+      "defaultSize": { "width": 180, "height": 360 },
+      "safeZone": "Must be behind text, not touching",
+      "usage": "plate"
+    },
+    "bar-right-small": {
+      "shape": "rect",
+      "fill": "warning",
+      "defaultPosition": { "yAnchor": "50%", "right": 0 },
+      "defaultSize": { "width": 6, "height": 260 },
+      "safeZone": "Decorative hairline",
+      "usage": "plate"
+    },
+    "triangle-tr": {
+      "shape": "triangle-equilateral",
+      "fill": "warning",
+      "defaultPosition": { "top": 136, "right": 96 },
+      "defaultSize": { "width": 140, "height": 120 },
+      "safeZone": "Must clear top rule by 80 px",
+      "usage": "plate"
+    },
+    "square-tr": {
+      "shape": "rect",
+      "fill": ["ink", "warning"],
+      "defaultPosition": { "top": 180, "right": 96 },
+      "defaultSize": { "width": 140, "height": 140 },
+      "safeZone": "Must clear top rule by 40 px",
+      "usage": "plate"
+    },
+    "dot-accent": {
+      "shape": "circle",
+      "fill": "warning",
+      "defaultSize": { "diameter": 64 },
+      "safeZone": "Pair with cover circle",
+      "usage": "cover-only"
+    }
+  },
+  "code": {
+    "font": "jetbrains-mono",
+    "sizePx": 17,
+    "lineHeight": 1.7,
+    "leftRuleWeight": 2,
+    "leftRuleColor": "primary",
+    "indentFromRule": 24,
+    "maxColumnPx": {
+      "vertical": 720,
+      "landscape": 1100
+    },
+    "syntax": {
+      "keys": { "color": "primary", "weight": "bold" },
+      "strings": { "color": "code-string" },
+      "numbers": { "color": "complement" },
+      "punctuation": { "color": "ink-dim" }
+    }
+  },
+  "list": {
+    "numberFormat": "01 / 02 / 03",
+    "numberFont": "jetbrains-mono",
+    "numberSizePx": 12,
+    "numberColor": "ink",
+    "numberGapPx": 28,
+    "itemNameFont": "jetbrains-mono",
+    "itemNameSizePx": 24,
+    "itemNameWeight": "bold",
+    "itemNameColor": "primary",
+    "itemDescFont": "inter",
+    "itemDescSizePx": 18,
+    "itemDescColor": "ink",
+    "itemRuleWeightPx": 1,
+    "itemRuleColor": "ink"
+  },
+  "chart": {
+    "$description": "plate-chart engine config. Charts.css (pure CSS) styles a semantic <table> as a chart — no JS, no canvas, no inline-SVG charts. Machine mirror of carousel-manifest.md §12a; hard rules live in happycampr.design-contracts.json#chart.",
+    "engine": "charts.css",
+    "stylesheetCdn": "https://cdn.jsdelivr.net/npm/charts.css@1.2.0/dist/charts.min.css",
+    "stylesheetVersion": "1.2.0",
+    "stylesheetPinned": true,
+    "families": ["column", "bar", "line", "area", "pie"],
+    "familyClass": {
+      "column": "charts-css column",
+      "bar": "charts-css bar",
+      "line": "charts-css line",
+      "area": "charts-css area",
+      "pie": "charts-css pie"
+    },
+    "multiSeriesClass": "multiple",
+    "sizeNormalization": "--size = value / axisMax, clamped 0..1; line and area cells additionally use --start (running baseline) + --size (segment)",
+    "plotBox": {
+      "$description": "The chart <table> bounding box must fit inside the active orientation's grid.contentArea, which is already inset 40 px from the top/bottom rules (so shape-to-rule is automatic). With a headline, the chart box starts >= headlineGapPx below the headline's last line.",
+      "source": "orientations.{vertical|landscape}.grid.contentArea",
+      "headlineGapPx": 48,
+      "snapPx": 8
+    },
+    "seriesPalette": ["primary", "warning", "secondary", "complement"],
+    "maxSeries": 6,
+    "axis": {
+      "lineColors": ["ink", "ink-dim"],
+      "maxLineWeightPx": 1,
+      "labelType": "caption",
+      "axisTitleType": "body-sm",
+      "minLabelPx": 14,
+      "labelColors": ["ink", "ink-dim"]
+    },
+    "captionHandling": "suppress (caption { display: none }) or restyle to the caption token; the slide headline is the chart title",
+    "spacingPx": 8,
+    "forbiddenComponents": ["3d", "animation", "motion", "tooltip", "show-data-on-hover"]
+  },
+  "slideTypes": {
+    "cover": {
+      "shapes": ["circle-center", "dot-accent"],
+      "titleSize": "display",
+      "tag": "A Short Essay",
+      "colophonRight": "Seven Plates"
+    },
+    "plate": {
+      "shapes": "one-of-six-optional",
+      "titleSize": "title",
+      "titleLines": [1, 4],
+      "bodyParagraphs": [1, 3],
+      "captionOptional": true
+    },
+    "plate-code": {
+      "titleSize": "title",
+      "hasCodeBlock": true
+    },
+    "plate-list": {
+      "titleSize": "title",
+      "itemCount": 3
+    },
+    "plate-chart": {
+      "engine": "charts.css",
+      "titleSize": "title-sm",
+      "titleOptional": true,
+      "families": ["column", "bar", "line", "area", "pie"],
+      "fallback": "plate-list",
+      "config": "chart"
+    },
+    "takeaway": {
+      "surfaceOptional": "inverse",
+      "titleSize": "title",
+      "titleAccents": 2,
+      "colophonRight": "Fin."
+    }
+  },
+  "export": {
+    "format": "pdf",
+    "pagesPerSlide": 1,
+    "filenamePattern": "{slug}-v{N}.pdf"
+  }
+}

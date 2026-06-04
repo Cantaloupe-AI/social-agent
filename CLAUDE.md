@@ -5,12 +5,12 @@
 -->
 
 <project>
-  <name>Cantalog</name>
+  <name>Happycampr Carousels</name>
   <what>Local-only macOS desktop app for end-of-day activity capture and LinkedIn carousel authoring.</what>
   <one_liner>
     Today's git commits + Claude Code sessions in a checkable list, a free-text
     "anything worth remembering?" field, and a Slides tab for building
-    Cantaloupe-branded LinkedIn carousels. Saves to SQLite, closes itself.
+    happycampr-branded LinkedIn carousels. Saves to SQLite, closes itself.
   </one_liner>
   <status>v0.1 prototype. See STATUS.md (dated 2026-04-19) for the authoritative snapshot.</status>
 </project>
@@ -18,7 +18,7 @@
 <intent>
   <primary>
     Log insights throughout the day and translate them into LinkedIn carousels
-    that follow Cantaloupe's brand guidelines. The carousel authoring spec lives
+    that follow happycampr's brand guidelines. The carousel authoring spec lives
     in design/carousel-manifest.md and is the source of truth for any generated
     carousel.
   </primary>
@@ -41,7 +41,7 @@
   </frontend>
   <desktop>Tauri v2. Vite HMR in dev; WKWebView in shipped builds.</desktop>
   <backend>
-    Rust crate `cantalog_lib` (src-tauri/). SQLite for persistence, chrono for
+    Rust crate `happycampr_carousels_lib` (src-tauri/). SQLite for persistence, chrono for
     dates, serde for config + IPC types. Five Tauri commands in commands.rs are
     thin wrappers over the module functions.
   </backend>
@@ -52,8 +52,8 @@
 </architecture>
 
 <data_layout>
-  <config>~/Library/Application Support/cantalog/config.toml</config>
-  <db>~/Library/Application Support/cantalog/db.sqlite</db>
+  <config>~/Library/Application Support/happycampr-carousels/config.toml</config>
+  <db>~/Library/Application Support/happycampr-carousels/db.sqlite</db>
   <tables>
     <table name="entries">Per-day save: date (PK), thoughts, selected activity ids.</table>
     <table name="carousels">Carousel metadata: id (PK), label, created_at, updated_at.</table>
@@ -69,11 +69,11 @@
 <file_map>
   <backend root="src-tauri/src/">
     <file path="lib.rs">Module tree + Tauri builder + plugin + handler registration.</file>
-    <file path="main.rs">Delegates to cantalog_lib::run.</file>
+    <file path="main.rs">Delegates to happycampr_carousels_lib::run.</file>
     <file path="commands.rs">Tauri commands (thin wrappers); generate_carousel_pdf parks the child + watcher, delegates the core to generation.rs.</file>
-    <file path="generation.rs">Tauri-free generation core shared by the Tauri command and cantalog-cli: repo_root, next_run_dir, spawn_pipe_tee, prepare_run, spawn_driver, finalize. The ONE place run-dir naming + the crash-finalize safety net live.</file>
-    <file path="cli.rs">cantalog-cli handlers (pure, Result-returning): parse_deck, cmd_carousel_*, cmd_slide_add, cmd_import, cmd_status, cmd_open, cmd_generate. Injected stdin/opener for tests.</file>
-    <file path="bin/cantalog-cli.rs">Thin clap parser over cli.rs. `cargo run --bin cantalog-cli -- …`.</file>
+    <file path="generation.rs">Tauri-free generation core shared by the Tauri command and happycampr-carousels-cli: repo_root, next_run_dir, spawn_pipe_tee, prepare_run, spawn_driver, finalize. The ONE place run-dir naming + the crash-finalize safety net live.</file>
+    <file path="cli.rs">happycampr-carousels-cli handlers (pure, Result-returning): parse_deck, cmd_carousel_*, cmd_slide_add, cmd_import, cmd_status, cmd_open, cmd_generate. Injected stdin/opener for tests.</file>
+    <file path="bin/happycampr-carousels-cli.rs">Thin clap parser over cli.rs. `cargo run --bin happycampr-carousels-cli -- …`.</file>
     <file path="config.rs">TOML load/save + default_config.</file>
     <file path="db.rs">open / migrate / save_entry / load_entry + carousel+slide CRUD.</file>
     <file path="types.rs">Activity, Entry, Config, ActivitySource, GitConfig, ClaudeCodeConfig.</file>
@@ -90,7 +90,7 @@
     <file path="design-tokens.json">DTCG-format tokens (color, typography, spacing, layout). Canonical source.</file>
     <file path="carousel-manifest.md">Human-readable carousel authoring spec (canvas, grid, shapes, safe zones).</file>
     <file path="carousel.manifest.json">Machine-readable numeric mirror of the manifest, for renderers.</file>
-    <file path="cantaloupe.design-contracts.json">Validation rules (safe zones, line-height floors, shape/color limits).</file>
+    <file path="happycampr.design-contracts.json">Validation rules (safe zones, line-height floors, shape/color limits).</file>
     <file path="carousel_example.md">Five-slide example exercising every template.</file>
   </design>
 </file_map>
@@ -115,6 +115,16 @@
     <cmd purpose="bundle">bun run vite build</cmd>
     <cmd purpose="debug_app">bun run tauri build --debug</cmd>
   </commands>
+  <generation_model>
+    For any TEST or CHECK carousel generation (verifying a rebrand, the
+    pipeline, a contract change — anything that is not a real deliverable),
+    use `claude-sonnet-4-6` for BOTH agents (implementation AND manager). The
+    per-carousel default is opus×2 (`claude-opus-4-7`), which is correct for
+    real output but too slow/expensive for test runs (Opus thinking blocks +
+    SDK rate-limit backoff push a 5-slide check past 30 min). Set impl_model
+    and manager_model to sonnet on the carousel before `happycampr-carousels-cli generate`
+    for these runs. Opus×2 only for genuine deliverables.
+  </generation_model>
   <ui_testing_gap>
     Playwright is not installed and not on the approved deps list. UI smoke
     tests are manual — see the checklist at the bottom of STATUS.md. Do not add
@@ -132,7 +142,7 @@
   <next priority_order="true">
     <item>YAML-structured slide schema: upgrade the slides table's content blob to the manifest's front-matter format.</item>
     <item>Live preview: render a slide at 1080×1350 in the editor. No PDF yet.</item>
-    <item>Contract-driven validation at save time (reject slides that violate cantaloupe.design-contracts.json).</item>
+    <item>Contract-driven validation at save time (reject slides that violate happycampr.design-contracts.json).</item>
     <item>PDF export: concat per-slide pages into a single {slug}-v{N}.pdf.</item>
     <item>Insight → carousel pipeline: a "promote this thought to a slide" path that lifts a day's thought field into a new carousel.</item>
   </next>
@@ -157,7 +167,7 @@
     The authoring spec for carousels. If you are generating, editing, or
     validating slide content, this is the source of truth.
   </doc>
-  <doc path="design/cantaloupe.design-contracts.json">
+  <doc path="design/happycampr.design-contracts.json">
     The hard validation rules. A renderer MUST fail the build on violation.
   </doc>
   <doc path="roadmap.md">Currently empty. STATUS.md's "Known limitations" + this file's `&lt;roadmap&gt;` are the active list.</doc>

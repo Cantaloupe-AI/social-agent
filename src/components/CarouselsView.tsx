@@ -77,7 +77,7 @@ export function CarouselsView() {
       // user sees it; keep the input open so they can fix the label
       // (e.g. unique-constraint violation). Still log so it shows up in the
       // devtools console without depending on the banner being noticed.
-      console.error("cantalog: createCarousel failed", e);
+      console.error("happycampr: createCarousel failed", e);
     }
   }
 
@@ -186,7 +186,7 @@ export function CarouselsView() {
                   // silent (CLAUDE.md §conventions/errors).
                   void duplicate(c.id).catch((e: unknown) => {
                     console.debug(
-                      "cantalog: duplicate rejected (already surfaced via hook)",
+                      "happycampr: duplicate rejected (already surfaced via hook)",
                       e,
                     );
                   });

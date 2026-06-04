@@ -17,7 +17,7 @@ What was unclear, which spec sections conflicted, what the agent chose.
 
 ## 2026-04-24T00:00:00Z — manager — 00-0c402695-1379-4910-911f-ee311fd03635
 
-Two template-level conflicts between `cantaloupe.design-contracts.json` and
+Two template-level conflicts between `happycampr.design-contracts.json` and
 `carousel-manifest.md` surfaced on this slide — both inherited from the
 canonical page layout rather than caused by the implementation.
 
@@ -77,7 +77,7 @@ How I decided to rule: each ambiguous element passes the explicit hard-rule chec
 
 Caption max-column conflict between contracts and manifest in landscape.
 
-`cantaloupe.design-contracts.json` §caption sets `maxColumnPx: 520`
+`happycampr.design-contracts.json` §caption sets `maxColumnPx: 520`
 unconditionally (no orientation split). `carousel-manifest.md` §9 says:
 "Flush left, max column width: vertical = 520 px; landscape = 600 px".
 The system prompt instructs the manager to use the landscape variants of
@@ -92,5 +92,89 @@ have explicit landscape entries in contracts — caption appears to be an
 oversight rather than a deliberate same-width-everywhere rule.
 
 Suggested spec fix: add `caption.maxColumnPx: { vertical: 520, landscape: 600 }`
-to `cantaloupe.design-contracts.json` so the contracts and manifest
+to `happycampr.design-contracts.json` so the contracts and manifest
 agree.
+
+## 2026-05-18T00:00:00Z — implementation — 02-d15b1fc9-a42f-478a-9da2-91f6cd295c09
+
+**Hard rule #10 vs. manifest/contracts logo filename and width conflict.**
+
+Hard rule #10 (in the implementation agent system prompt) specifies:
+- filename: a stale pre-rebrand logo filename (not the shipped asset)
+- width: `132px`
+- alt: a stale pre-rebrand brand string
+
+`carousel.manifest.json#branding.headerLogo` and `happycampr.design-contracts.json#branding.headerLogo` both specify:
+- filename: `happycampr-logo.svg`
+- widthPx: `118` (native 54:11 aspect at 24px height → 24 × 1080/220 ≈ 118px)
+- alt: `"happycampr"`
+
+The driver actually copied the file as `happycampr-logo.svg` (confirmed via directory listing). The canonical `carousel_example.md` also uses `happycampr-logo.svg` with width 118px and was "visually verified through the real pipeline."
+
+**Chose:** `happycampr-logo.svg`, `width: 118px`, `alt="happycampr"` — aligning with the machine-readable spec, the design contracts, and the verified example. Hard rule #10 appears to be a copy-paste artifact from the pre-rebrand template that was not updated when the brand switched to happycampr.
+
+Suggested fix: update hard rule #10 in the implementation agent system prompt to match the happycampr values (`happycampr-logo.svg`, `118px`, `alt="happycampr"`).
+
+## 2026-05-21T00:00:00Z — implementation — 00-18fcba9b-a4d1-4b9d-932a-1a3dd7832c9c
+
+**Cover display size vs. headline length: forced down to title-sm (84 px).**
+
+`carousel-manifest.md §8 / slideTypes.cover` mandates `titleSize: "display"` (140 px)
+for cover headlines. The source headline is "Projects, milestones, / issues." — two lines
+as authored.
+
+"Projects, milestones," at display (140 px) in Inter 700 with −0.055em tracking spans
+approximately 1267 px — exceeding both the 820 px title column and the 888 px content
+area. Even the full bleed at 1080 px canvas width isn't enough. The line cannot be
+rendered at 140 px without overflow (which the contracts call a bug).
+
+**Chose:** `title-sm` (84 px) with −0.035em tracking. At that size "Projects, milestones,"
+≈ 751 px — comfortably inside the 820 px title column. The two-line structure the author
+specified is preserved.
+
+This conflict will arise whenever a cover headline line exceeds ~9 characters at display
+size (the practical budget at 140 px in an 820 px column). Suggested spec fix: add a
+fallback rule for cover slides analogous to the plate rule ("Drop to title-sm if the
+headline wraps or overflows at the default size"), applied when the cover line length
+exceeds the display-size budget.
+
+## 2026-05-19T00:00:00Z — implementation — 04-fda23f48-7805-4dd1-9bfa-9c8b56159592
+
+**pie-chart slice colors vs. strict `seriesPalette` order.**
+
+`carousel.manifest.json#chart.seriesPalette` lists `["primary","warning","secondary","complement"]` which resolves to `["#946334","#946334","#5A6B4C","#2B1810"]`. Slots 1 and 2 are identical because the happycampr brand has no amber and `warning` maps to `primary` (graham).
+
+For a bar/column/line chart, a duplicate colour on adjacent series just means two series look the same — mitigated by labels. For a **pie chart**, adjacent same-coloured slices visually merge into one arc, destroying the segmentation entirely (Referral 46% + Search 28% would appear as one 74% wedge).
+
+**Chose:** use four visually distinct brand tones in order — `#946334` (primary), `#5A6B4C` (secondary), `#2B1810` (complement/ink), `#7C6F66` (ink-dim) — skipping the `warning` duplicate. All data is redundantly labelled in the series key, so slice-colour is not the sole encoding.
+
+Suggested spec fix: (a) add a pie-chart exception to the `seriesPalette` order that skips exact duplicates, or (b) offer an alternate 4-tone pie palette using ink-dim as the fourth slot so pie charts can be fully colour-distinct without violating brand constraints.
+
+## 2026-05-29T00:00:00Z — implementation — 00-41cc8a2c-18e6-47fa-9617-39b177e053e2
+
+**Cover display size vs. 2-line headline: second line split into two.**
+
+Source headline (2 lines as authored): "We're" / "{{accent:happycampr}} now."
+
+At display (140 px) in Inter 700 with −0.055em tracking, "happycampr now." is estimated at
+~950–1100 px — far exceeding both the 820 px title column and the 888 px content area.
+At title (104 px) it's estimated at ~820–870 px, still overflowing or at the exact edge of
+the 820 px column. The spec rule is "auto-wrap is a bug; break manually or drop the size tier."
+
+**Chose:** Keep display (140 px) but split the author's second line into two lines —
+"happycampr" (in primary) and "now." — producing a 3-line cover headline. Each individual
+line fits comfortably in the 820 px column at 140 px ("happycampr" ≈ 750 px, "now." ≈ 250 px).
+The 3-line arrangement "We're / happycampr / now." reads with intentional editorial rhythm and
+gives "happycampr" its own full line as the rebrand's hero word.
+
+Because 'p' and 'y' (descenders) appear on line 2 (not the last line), the multi-line
+display contract requires line-height ≥ 1.0 rather than the single-line-safe 0.95.
+
+This is a recurrence of the cover-display-vs-long-line conflict logged in the
+2026-05-21 entry for slide 00-18fcba9b. Both cases share the same root: the display-size
+character budget (~9 chars at 820 px) is too small for typical brand/subtitle copy.
+
+Suggested spec fix: same as prior entry — add an explicit cover fallback rule ("if any
+authored line overflows at display size, split at natural word boundaries into ≤9-char
+per-line chunks, preserving accent spans"). This makes the split deterministic rather
+than a per-implementation judgment call.
